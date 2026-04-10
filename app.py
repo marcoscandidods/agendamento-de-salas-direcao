@@ -335,4 +335,17 @@ with t2: exibir_tabela("Laboratório de Informática")
 with t3: exibir_tabela("Sala de Reunião")
 with t4: resumo_semanal_navegavel()
 
-st.markdown("<br><p style='text-align: center; color: #6b7280; font-size: 14px;'>🚀 Desenvolvido por <b>Marcos Candido</b> - Projeto de Extensão do Curso de Engenharia de Software</p>", unsafe_allow_html=True)
+# --- RODAPÉ COM ISENÇÃO DE RESPONSABILIDADE ---
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center; color: #6b7280; font-size: 13px; line-height: 1.6;'>
+    <p>🚀 <b>Desenvolvido voluntariamente por Marcos Candido</b></p>
+    <p>Este software é uma ferramenta acadêmica experimental de apoio administrativo, desenvolvida como parte de um 
+    <b>Projeto de Extensão do Curso de Engenharia de Software</b> para fins estritamente acadêmicos e sem fins lucrativos.</p>
+    <p style='font-style: italic;'>
+        O sistema é fornecido "como está", sem garantias de suporte técnico ou disponibilidade contínua, 
+        operando integralmente em serviços de nuvem gratuitos (GitHub, Streamlit e Neon). 
+        O desenvolvedor não se responsabiliza por limitações dessas plataformas ou pela integridade permanente dos dados.
+    </p>
+</div>
+""", unsafe_allow_html=True)
