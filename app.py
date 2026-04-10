@@ -45,15 +45,8 @@ def salvar_reserva(sala, data, inicio, fim, evento, origem, sei, status, servido
     conn.close()
     return True
 
-def deletar_registro(id_registro):
-    conn = sqlite3.connect('agendamentos_direcao.db')
-    c = conn.cursor()
-    c.execute("DELETE FROM reservas WHERE id=?", (id_registro,))
-    conn.commit()
-    conn.close()
-
-# --- 2. INTERFACE ---
-st.set_page_config(page_title="Sistema de Agendamento - Direção", layout="wide")
+# --- 2. INTERFACE E LOGIN ---
+st.set_page_config(page_title="Gestão de Espaços - Direção", layout="wide")
 init_db()
 
 st.title("📅 Gestão de Espaços - Direção")
@@ -79,11 +72,52 @@ todas_as_salas = abas_fixas + salas_de_aula
 
 if logado:
     st.sidebar.success("Sessão Ativa")
-    if st.sidebar.button("Sair"):
-        st.session_state.logado = False
-        st.rerun()
     
+    # --- NOVO: BACKUP GERAL ---
     st.sidebar.markdown("---")
+    st.sidebar.subheader("📦 Backup e Importação")
+    
+    conn = sqlite3.connect('agendamentos_direcao.db')
+    df_total = pd.read_sql_query("SELECT * FROM reservas", conn)
+    conn.close()
+    
+    if not df_total.empty:
+        output_geral = io.BytesIO()
+        with pd.ExcelWriter(output_geral, engine='xlsxwriter') as writer:
+            for s in todas_as_salas:
+                df_sala = df_total[df_total['sala'] == s]
+                if not df_sala.empty:
+                    df_sala.to_excel(writer, sheet_name=s[:31], index=False)
+        
+        timestamp = datetime.now().strftime("%d_%m_%Y_%H%M")
+        st.sidebar.download_button(
+            label="📥 Baixar Tudo (Excel Único)",
+            data=output_geral.getvalue(),
+            file_name=f"Backup_Geral_{timestamp}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+    # --- NOVO: IMPORTAR EXCEL ---
+    arquivo_upload = st.sidebar.file_uploader("Subir Backup (Excel)", type=["xlsx"])
+    if arquivo_upload:
+        if st.sidebar.button("🚀 Processar Importação"):
+            try:
+                dict_df = pd.read_excel(arquivo_upload, sheet_name=None)
+                conn = sqlite3.connect('agendamentos_direcao.db')
+                for aba, dados in dict_df.items():
+                    # Remove ID para não conflitar na inserção
+                    if 'id' in dados.columns: dados = dados.drop(columns=['id'])
+                    dados.to_sql('reservas', conn, if_exists='append', index=False)
+                conn.close()
+                st.sidebar.success("Dados importados com sucesso!")
+                st.rerun()
+            except Exception as e:
+                st.sidebar.error(f"Erro ao importar: {e}")
+
+    st.sidebar.markdown("---")
+    # (O código de agendamento e exclusão continua aqui...)
+    # ... (mesmo código da versão anterior para salvar_reserva e deletar_registro)
+    
     with st.sidebar.expander("🗑️ Remover Registros"):
         sala_l = st.selectbox("Sala", todas_as_salas, key="l_s")
         conn = sqlite3.connect('agendamentos_direcao.db')
@@ -93,7 +127,10 @@ if logado:
             opc = {f"ID {row['id']} | {row['data']}": row['id'] for _, row in df_l.iterrows()}
             it = st.selectbox("Item", list(opc.keys()))
             if st.button("EXCLUIR"):
-                deletar_registro(opc[it])
+                conn = sqlite3.connect('agendamentos_direcao.db')
+                conn.execute("DELETE FROM reservas WHERE id=?", (opc[it],))
+                conn.commit()
+                conn.close()
                 st.rerun()
 
     st.sidebar.markdown("---")
@@ -102,14 +139,10 @@ if logado:
     tipo_ag = st.sidebar.radio("Tipo", ["Pontual", "Por Período"])
     origem_opc = ["DA-FES", "DECON-FES", "DEA-FES", "DIRETORIA", "EXTERNO"]
     origem_sel = st.sidebar.selectbox("Solicitante", origem_opc)
-    esp_ext = ""
-    if origem_sel == "EXTERNO":
-        esp_ext = st.sidebar.text_input("Especificar Externo")
+    esp_ext = st.sidebar.text_input("Especificar Externo") if origem_sel == "EXTERNO" else ""
     meio_opc = ["E-mail", "SEI", "Presencial", "Outro"]
     meio_sel = st.sidebar.selectbox("Meio da solicitação", meio_opc)
-    sei_n = ""
-    if meio_sel == "SEI":
-        sei_n = st.sidebar.text_input("Nº Processo SEI")
+    sei_n = st.sidebar.text_input("Nº Processo SEI") if meio_sel == "SEI" else ""
 
     with st.sidebar.form("form_final"):
         if tipo_ag == "Pontual":
@@ -120,16 +153,15 @@ if logado:
             d_i = c1.date_input("Início", format="DD/MM/YYYY")
             d_f = c2.date_input("Fim", format="DD/MM/YYYY")
             dias = st.multiselect("Dias", ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"])
-            data_ev = None
+        
         h_i = st.time_input("Início", value=time(8, 0), step=1800)
         h_f = st.time_input("Término", value=time(9, 0), step=1800)
         st_sel = st.selectbox("Status", ["Confirmado", "Pré-agendado", "Cancelado"])
-        conf_c = st.checkbox("Confirmar ação") if st_sel == "Cancelado" else True
         evento = st.text_area("Finalidade/Evento")
         servidor = st.text_input("Servidor Lançador")
         
         if st.form_submit_button("Confirmar Agendamento"):
-            if evento and servidor and conf_c:
+            if evento and servidor:
                 ori_final = esp_ext if origem_sel == "EXTERNO" else origem_sel
                 datas_lista = [data_ev] if tipo_ag == "Pontual" else []
                 if tipo_ag == "Por Período":
@@ -143,93 +175,52 @@ if logado:
                     salvar_reserva(sala_sel, d.strftime('%d/%m/%Y'), str(h_i), str(h_f), evento, ori_final, sei_n, st_sel, servidor)
                 st.rerun()
 
-# --- 3. FUNÇÃO DE CALENDÁRIO COMPACTO (RESPONSIVO PARA CELULAR) ---
+# --- 3. COMPONENTES VISUAIS (CALENDÁRIO E TABELA) ---
 def calendario_compacto(df_sala):
     hoje = datetime.now()
     ano, mes = hoje.year, hoje.month
-    nome_mes = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"][mes-1]
-    
-    st.write(f"🔍 **Disponibilidade - {nome_mes}/{ano}**")
-    
     dias_ocupados = {}
     if not df_sala.empty:
         for _, row in df_sala.iterrows():
             try:
                 dt = datetime.strptime(row['data'], '%d/%m/%Y')
                 if dt.year == ano and dt.month == mes:
-                    if dias_ocupados.get(dt.day) != 'Confirmado':
-                        dias_ocupados[dt.day] = row['status']
+                    if dias_ocupados.get(dt.day) != 'Confirmado': dias_ocupados[dt.day] = row['status']
             except: continue
 
-    # CSS para forçar a grade no celular
-    html_cal = f"""
-    <style>
-        .cal-table {{ width: 100%; table-layout: fixed; border-collapse: collapse; font-family: sans-serif; }}
-        .cal-th {{ text-align: center; font-size: 10px; color: #888; padding: 5px 0; }}
-        .cal-td {{ border: 1px solid #f0f0f0; height: 35px; text-align: center; vertical-align: middle; position: relative; }}
-        .day-num {{ font-size: 12px; font-weight: bold; }}
-        .status-confirmado {{ background-color: #3D5AFE; color: white; border-radius: 4px; }}
-        .status-preagendado {{ background-color: #FFAB00; color: black; border-radius: 4px; }}
-        .status-fds {{ background-color: #fafafa; color: #ccc; }}
-        .status-normal {{ color: #444; }}
-    </style>
-    <table class='cal-table'>
-        <tr>
-            <th class='cal-th'>D</th><th class='cal-th'>S</th><th class='cal-th'>T</th>
-            <th class='cal-th'>Q</th><th class='cal-th'>Q</th><th class='cal-th'>S</th><th class='cal-th'>S</th>
-        </tr>
-    """
+    html_cal = f"<table style='width:100%; table-layout:fixed; border-collapse:collapse; text-align:center;'><tr>"
+    for d in ['D','S','T','Q','Q','S','S']: html_cal += f"<th style='font-size:10px; color:gray;'>{d}</th>"
+    html_cal += "</tr>"
     
-    cal = calendar.monthcalendar(ano, mes)
-    for semana in cal:
+    for semana in calendar.monthcalendar(ano, mes):
         html_cal += "<tr>"
         for i, dia in enumerate(semana):
-            if dia == 0:
-                html_cal += "<td class='cal-td'></td>"
+            if dia == 0: html_cal += "<td></td>"
             else:
                 status = dias_ocupados.get(dia)
-                classe = "status-normal"
-                if status == 'Confirmado': classe = "status-confirmado"
-                elif status == 'Pré-agendado': classe = "status-preagendado"
-                elif i == 0 or i == 6: classe = "status-fds"
-                
-                html_cal += f"<td class='cal-td {classe}'><span class='day-num'>{dia}</span></td>"
+                bg = "#3D5AFE" if status == 'Confirmado' else ("#FFAB00" if status == 'Pré-agendado' else ("#fafafa" if i==0 or i==6 else "white"))
+                color = "white" if status == 'Confirmado' else ("black" if status == 'Pré-agendado' else "#444")
+                html_cal += f"<td style='background-color:{bg}; color:{color}; border:1px solid #f0f0f0; border-radius:4px; font-size:12px; padding:5px;'>{dia}</td>"
         html_cal += "</tr>"
-    html_cal += "</table>"
-    
-    st.markdown(html_cal, unsafe_allow_html=True)
+    st.markdown(html_cal + "</table>", unsafe_allow_html=True)
 
-# --- 4. VISUALIZAÇÃO ---
 def exibir_tabela(n_sala):
     conn = sqlite3.connect('agendamentos_direcao.db')
     df = pd.read_sql_query("SELECT * FROM reservas WHERE sala=? ORDER BY data DESC", conn, params=(n_sala,))
     conn.close()
-
-    calendario_compacto(df) # Chamada do novo calendário
-    st.markdown("<br>", unsafe_allow_html=True)
-
+    calendario_compacto(df)
+    st.write("---")
     if not df.empty:
-        df_display = df.copy()
-        df_display = df_display[['status', 'data', 'horario_inicio', 'horario_fim', 'evento', 'origem', 'numero_sei', 'servidor_resp']]
+        df_display = df[['status', 'data', 'horario_inicio', 'horario_fim', 'evento', 'origem', 'numero_sei', 'servidor_resp']]
         df_display.columns = ['Status', 'Data', 'Início', 'Fim', 'Descrição', 'Solicitante', 'Nº SEI', 'Lançado por']
-        
-        cores = {'Confirmado': '#d4edda', 'Pré-agendado': '#fff3cd', 'Cancelado': '#f8d7da'}
-        st.dataframe(df_display.style.map(lambda x: f'background-color: {cores.get(x, "#ffffff")}; color: black', subset=['Status']), 
-                     use_container_width=True, hide_index=True)
-        
-        if logado:
-            out = io.BytesIO()
-            with pd.ExcelWriter(out, engine='xlsxwriter') as wr:
-                df_display.to_excel(wr, index=False)
-            st.download_button(f"📥 Excel - {n_sala}", out.getvalue(), f"{n_sala}.xlsx", key=f"d_{n_sala}")
-    else:
-        st.info(f"Sem agendamentos registrados.")
+        st.dataframe(df_display.style.map(lambda x: f'background-color: {"#d4edda" if x=="Confirmado" else ("#fff3cd" if x=="Pré-agendado" else "#f8d7da")}', subset=['Status']), use_container_width=True, hide_index=True)
+    else: st.info("Sem agendamentos.")
 
 st.subheader("🗓️ Cronograma Principal")
-tab_audit, tab_lab, tab_reuniao = st.tabs(abas_fixas)
-with tab_audit: exibir_tabela("Auditório Rio Amazonas")
-with tab_lab: exibir_tabela("Laboratório de Informática")
-with tab_reuniao: exibir_tabela("Sala de Reunião")
+t_a, t_l, t_r = st.tabs(abas_fixas)
+with t_a: exibir_tabela("Auditório Rio Amazonas")
+with t_l: exibir_tabela("Laboratório de Informática")
+with t_r: exibir_tabela("Sala de Reunião")
 
 st.markdown("---")
 s_ext = st.selectbox("Salas de Aula:", ["Selecione..."] + salas_de_aula)
