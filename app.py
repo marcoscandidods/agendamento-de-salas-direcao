@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, time
 import calendar
 import io
 
-# --- 1. CONFIGURAÇÃO E BANCO DE DATOS ---
+# --- 1. CONFIGURAÇÃO E BANCO DE DADOS ---
 def init_db():
     conn = sqlite3.connect('agendamentos_direcao.db')
     c = conn.cursor()
@@ -47,8 +47,16 @@ init_db()
 
 st.title("📅 Gestão de Espaços - Direção")
 
+# Estados para o calendário mensal
 if 'mes_ref' not in st.session_state: st.session_state.mes_ref = datetime.now().month
 if 'ano_ref' not in st.session_state: st.session_state.ano_ref = datetime.now().year
+
+# ESTADO PARA O MAPA SEMANAL (Navegação)
+if 'data_mapa_ref' not in st.session_state:
+    hoje = datetime.now().date()
+    # Ajusta para a segunda-feira da semana atual
+    st.session_state.data_mapa_ref = hoje - timedelta(days=hoje.weekday())
+
 if 'logado' not in st.session_state: st.session_state.logado = False
 
 with st.sidebar.form("login_form"):
@@ -205,9 +213,33 @@ def exibir_tabela(n_sala, mostrar_cal=True):
                         conn = sqlite3.connect('agendamentos_direcao.db'); conn.execute("DELETE FROM reservas WHERE id=?", (id_edit,)); conn.commit(); conn.close()
                         st.rerun()
 
-# --- 4. ABA RESUMO SEMESTRAL (SISTEMA DE CARDS) ---
-def resumo_semestral():
-    st.subheader("🏛️ Mapa de Ocupação Semanal")
+# --- 4. ABA RESUMO (MAPA DE OCUPAÇÃO SEMANAL NAVEGÁVEL) ---
+def resumo_semanal_navegavel():
+    # --- CONTROLES DE NAVEGAÇÃO ---
+    c1, c2, c3 = st.columns([1, 3, 1])
+    with c1:
+        if st.button("◀ Semana Anterior", use_container_width=True):
+            st.session_state.data_mapa_ref -= timedelta(days=7)
+            st.rerun()
+    with c3:
+        if st.button("Próxima Semana ▶", use_container_width=True):
+            st.session_state.data_mapa_ref += timedelta(days=7)
+            st.rerun()
+            
+    # Datas da semana selecionada
+    segunda = st.session_state.data_mapa_ref
+    sabado = segunda + timedelta(days=5)
+    
+    with c2:
+        st.markdown(f"""
+            <div style='text-align:center; padding:5px; background-color:#1e1e1e; border-radius:10px; border:1px solid #333;'>
+                <h4 style='margin:0; color:#2563EB;'>Semana: {segunda.strftime('%d/%m')} a {sabado.strftime('%d/%m/%Y')}</h4>
+            </div>
+        """, unsafe_allow_html=True)
+
+    st.write("")
+
+    # --- BUSCA E FILTRO DE DADOS ---
     conn = sqlite3.connect('agendamentos_direcao.db')
     df = pd.read_sql_query("SELECT * FROM reservas WHERE status != 'Cancelado' AND sala LIKE 'Sala%'", conn)
     conn.close()
@@ -215,53 +247,54 @@ def resumo_semestral():
     # CSS para os Cartões
     st.markdown("""
         <style>
-        .resumo-container { display: flex; flex-direction: column; gap: 10px; width: 100%; }
-        .resumo-row { display: grid; grid-template-columns: 100px 1fr; border-bottom: 1px solid #333; padding: 10px 0; align-items: start; }
-        .resumo-sala { font-weight: bold; color: #fff; font-size: 16px; background: #333; padding: 5px; border-radius: 4px; text-align: center; }
-        .resumo-dias { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+        .resumo-container { display: flex; flex-direction: column; gap: 12px; width: 100%; }
+        .resumo-row { display: grid; grid-template-columns: 120px 1fr; border-bottom: 1px solid #333; padding: 10px 0; align-items: start; }
+        .resumo-sala { font-weight: bold; color: #fff; font-size: 15px; background: #262730; padding: 10px; border-radius: 8px; text-align: center; border: 1px solid #444; }
+        .resumo-dias { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
         .dia-col { min-width: 0; }
-        .dia-label { font-size: 11px; color: #888; text-transform: uppercase; margin-bottom: 4px; text-align: center; border-bottom: 1px solid #222;}
-        .card-container { display: flex; flex-direction: column; gap: 4px; }
+        .dia-header { font-size: 10px; color: #888; text-transform: uppercase; margin-bottom: 6px; text-align: center; font-weight: bold; }
+        .card-container { display: flex; flex-direction: column; gap: 5px; }
         .event-card { 
-            font-size: 11px; padding: 4px 6px; border-radius: 4px; color: white; line-height: 1.2;
-            word-wrap: break-word; font-weight: 500; box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+            font-size: 10px; padding: 6px; border-radius: 6px; color: white; line-height: 1.2;
+            word-wrap: break-word; font-weight: 600; box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
         }
-        .vazio { color: #444; font-size: 12px; text-align: center; }
+        .vazio { color: #333; font-size: 14px; text-align: center; }
         
-        /* Ajuste Mobile */
         @media (max-width: 768px) {
             .resumo-row { grid-template-columns: 1fr; }
-            .resumo-dias { grid-template-columns: 1fr 1fr; } /* No celular mostra 2 colunas de dias por vez */
-            .resumo-sala { width: 100%; margin-bottom: 10px; background: #2563EB; }
+            .resumo-dias { grid-template-columns: 1fr 1fr; } 
+            .resumo-sala { margin-bottom: 10px; background: #2563EB; }
         }
         </style>
     """, unsafe_allow_html=True)
 
-    dias_semana = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"]
-    m_d = {"Segunda":0, "Terça":1, "Quarta":2, "Quinta":3, "Sexta":4, "Sábado":5}
-
+    dias_semana_nomes = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"]
+    
     def get_color(origem):
         if "DA-FES" in origem: return "#1e40af"
         if "DECON" in origem: return "#166534"
         if "DEA" in origem: return "#9a3412"
         if "DIRETORIA" in origem: return "#6b21a8"
-        return "#4b5563" # Externo/Outro
+        return "#4b5563"
 
     html = "<div class='resumo-container'>"
     
+    # Geramos a lista de datas da semana atual para o filtro
+    datas_semana = [(segunda + timedelta(days=i)).strftime('%d/%m/%Y') for i in range(6)]
+
     for s in salas_de_aula_list:
         df_sala = df[df['sala'] == s].copy()
-        if not df_sala.empty:
-            df_sala['dw'] = pd.to_datetime(df_sala['data'], format='%d/%m/%Y').dt.weekday
-            
+        
         html += f"<div class='resumo-row'><div class='resumo-sala'>{s}</div>"
         html += "<div class='resumo-dias'>"
         
-        for d_nome in dias_semana:
-            html += f"<div class='dia-col'><div class='dia-label'>{d_nome[:3]}</div><div class='card-container'>"
+        for idx, d_nome in enumerate(dias_semana_nomes):
+            data_alvo = datas_semana[idx]
+            html += f"<div class='dia-col'><div class='dia-header'>{d_nome} ({data_alvo[:5]})</div><div class='card-container'>"
             
             if not df_sala.empty:
-                eventos = df_sala[df_sala['dw'] == m_d[d_nome]].sort_values(by="horario_inicio")
+                # Filtra exatamente pela data daquela coluna na semana selecionada
+                eventos = df_sala[df_sala['data'] == data_alvo].sort_values(by="horario_inicio")
                 if not eventos.empty:
                     for _, r in eventos.drop_duplicates(subset=['horario_inicio', 'horario_fim', 'origem']).iterrows():
                         cor = get_color(r['origem'])
@@ -269,15 +302,15 @@ def resumo_semestral():
                 else: html += "<div class='vazio'>-</div>"
             else: html += "<div class='vazio'>-</div>"
             
-            html += "</div></div>" # fecha card-container e dia-col
-            
-        html += "</div></div>" # fecha resumo-dias e resumo-row
+            html += "</div></div>"
+        html += "</div></div>"
         
     html += "</div>"
     st.markdown(html, unsafe_allow_html=True)
     
     st.markdown("---")
-    s_det = st.selectbox("🔍 Detalhes por Sala:", ["Selecione..."] + salas_de_aula_list)
+    st.write("#### 🔍 Consultar Detalhes Específicos")
+    s_det = st.selectbox("Escolha uma sala para gerenciar:", ["Selecione..."] + salas_de_aula_list)
     if s_det != "Selecione...": exibir_tabela(s_det)
 
 # --- EXECUÇÃO ---
@@ -285,7 +318,7 @@ t1, t2, t3, t4 = st.tabs(abas_fixas)
 with t1: exibir_tabela("Auditório Rio Amazonas")
 with t2: exibir_tabela("Laboratório de Informática")
 with t3: exibir_tabela("Sala de Reunião")
-with t4: resumo_semestral()
+with t4: resumo_semanal_navegavel()
 
 # --- RODAPÉ ---
 st.markdown("<br><br><p style='text-align: center; color: #6b7280; font-size: 14px;'>🚀 Desenvolvido por <b>Marcos Candido</b> - Projeto de Extensão</p>", unsafe_allow_html=True)
