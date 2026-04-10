@@ -45,15 +45,22 @@ def salvar_reserva(sala, data, inicio, fim, evento, origem, sei, status, servido
     conn.close()
     return True
 
-# --- 2. INTERFACE E LOGIN ---
+# --- 2. INTERFACE E CONTROLE DE NAVEGAÇÃO ---
 st.set_page_config(page_title="Gestão de Espaços - Direção", layout="wide")
 init_db()
+
+# Inicializa o estado do mês e ano se não existir
+if 'mes_ref' not in st.session_state:
+    st.session_state.mes_ref = datetime.now().month
+if 'ano_ref' not in st.session_state:
+    st.session_state.ano_ref = datetime.now().year
 
 st.title("📅 Gestão de Espaços - Direção")
 
 if 'logado' not in st.session_state:
     st.session_state.logado = False
 
+# Sidebar Login
 with st.sidebar.form("login_form"):
     st.header("🔐 Área Restrita")
     u_input = st.text_input("Usuário")
@@ -73,7 +80,7 @@ todas_as_salas = abas_fixas + salas_de_aula
 if logado:
     st.sidebar.success("Sessão Ativa")
     
-    # --- NOVO: BACKUP GERAL ---
+    # Backup e Importação
     st.sidebar.markdown("---")
     st.sidebar.subheader("📦 Backup e Importação")
     
@@ -85,39 +92,22 @@ if logado:
         output_geral = io.BytesIO()
         with pd.ExcelWriter(output_geral, engine='xlsxwriter') as writer:
             for s in todas_as_salas:
-                df_sala = df_total[df_total['sala'] == s]
-                if not df_sala.empty:
-                    df_sala.to_excel(writer, sheet_name=s[:31], index=False)
+                df_s = df_total[df_total['sala'] == s]
+                if not df_s.empty: df_s.to_excel(writer, sheet_name=s[:31], index=False)
         
-        timestamp = datetime.now().strftime("%d_%m_%Y_%H%M")
-        st.sidebar.download_button(
-            label="📥 Baixar Tudo (Excel Único)",
-            data=output_geral.getvalue(),
-            file_name=f"Backup_Geral_{timestamp}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        timestamp = datetime.now().strftime("%d_%m_%Y")
+        st.sidebar.download_button("📥 Baixar Backup Geral", output_geral.getvalue(), f"Backup_Geral_{timestamp}.xlsx")
 
-    # --- NOVO: IMPORTAR EXCEL ---
-    arquivo_upload = st.sidebar.file_uploader("Subir Backup (Excel)", type=["xlsx"])
-    if arquivo_upload:
-        if st.sidebar.button("🚀 Processar Importação"):
-            try:
-                dict_df = pd.read_excel(arquivo_upload, sheet_name=None)
-                conn = sqlite3.connect('agendamentos_direcao.db')
-                for aba, dados in dict_df.items():
-                    # Remove ID para não conflitar na inserção
-                    if 'id' in dados.columns: dados = dados.drop(columns=['id'])
-                    dados.to_sql('reservas', conn, if_exists='append', index=False)
-                conn.close()
-                st.sidebar.success("Dados importados com sucesso!")
-                st.rerun()
-            except Exception as e:
-                st.sidebar.error(f"Erro ao importar: {e}")
+    arquivo_upload = st.sidebar.file_uploader("Importar Backup", type=["xlsx"])
+    if arquivo_upload and st.sidebar.button("🚀 Processar Importação"):
+        dict_df = pd.read_excel(arquivo_upload, sheet_name=None)
+        conn = sqlite3.connect('agendamentos_direcao.db')
+        for aba, dados in dict_df.items():
+            if 'id' in dados.columns: dados = dados.drop(columns=['id'])
+            dados.to_sql('reservas', conn, if_exists='append', index=False)
+        conn.close()
+        st.rerun()
 
-    st.sidebar.markdown("---")
-    # (O código de agendamento e exclusão continua aqui...)
-    # ... (mesmo código da versão anterior para salvar_reserva e deletar_registro)
-    
     with st.sidebar.expander("🗑️ Remover Registros"):
         sala_l = st.selectbox("Sala", todas_as_salas, key="l_s")
         conn = sqlite3.connect('agendamentos_direcao.db')
@@ -137,11 +127,9 @@ if logado:
     st.sidebar.subheader("📝 Novo Agendamento")
     sala_sel = st.sidebar.selectbox("Espaço", todas_as_salas)
     tipo_ag = st.sidebar.radio("Tipo", ["Pontual", "Por Período"])
-    origem_opc = ["DA-FES", "DECON-FES", "DEA-FES", "DIRETORIA", "EXTERNO"]
-    origem_sel = st.sidebar.selectbox("Solicitante", origem_opc)
+    origem_sel = st.sidebar.selectbox("Solicitante", ["DA-FES", "DECON-FES", "DEA-FES", "DIRETORIA", "EXTERNO"])
     esp_ext = st.sidebar.text_input("Especificar Externo") if origem_sel == "EXTERNO" else ""
-    meio_opc = ["E-mail", "SEI", "Presencial", "Outro"]
-    meio_sel = st.sidebar.selectbox("Meio da solicitação", meio_opc)
+    meio_sel = st.sidebar.selectbox("Meio da solicitação", ["E-mail", "SEI", "Presencial", "Outro"])
     sei_n = st.sidebar.text_input("Nº Processo SEI") if meio_sel == "SEI" else ""
 
     with st.sidebar.form("form_final"):
@@ -175,10 +163,31 @@ if logado:
                     salvar_reserva(sala_sel, d.strftime('%d/%m/%Y'), str(h_i), str(h_f), evento, ori_final, sei_n, st_sel, servidor)
                 st.rerun()
 
-# --- 3. COMPONENTES VISUAIS (CALENDÁRIO E TABELA) ---
+# --- 3. COMPONENTES VISUAIS COM NAVEGAÇÃO ---
 def calendario_compacto(df_sala):
-    hoje = datetime.now()
-    ano, mes = hoje.year, hoje.month
+    # Botões de Navegação
+    col_v1, col_v2, col_v3 = st.columns([1, 4, 1])
+    
+    if col_v1.button("◀", key=f"prev_{st.session_state.mes_ref}"):
+        st.session_state.mes_ref -= 1
+        if st.session_state.mes_ref == 0:
+            st.session_state.mes_ref = 12
+            st.session_state.ano_ref -= 1
+        st.rerun()
+        
+    if col_v3.button("▶", key=f"next_{st.session_state.mes_ref}"):
+        st.session_state.mes_ref += 1
+        if st.session_state.mes_ref == 13:
+            st.session_state.mes_ref = 1
+            st.session_state.ano_ref += 1
+        st.rerun()
+    
+    mes = st.session_state.mes_ref
+    ano = st.session_state.ano_ref
+    nome_mes = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"][mes-1]
+    
+    col_v2.markdown(f"<h3 style='text-align: center; margin:0;'>{nome_mes} / {ano}</h3>", unsafe_allow_html=True)
+    
     dias_ocupados = {}
     if not df_sala.empty:
         for _, row in df_sala.iterrows():
@@ -208,12 +217,21 @@ def exibir_tabela(n_sala):
     conn = sqlite3.connect('agendamentos_direcao.db')
     df = pd.read_sql_query("SELECT * FROM reservas WHERE sala=? ORDER BY data DESC", conn, params=(n_sala,))
     conn.close()
+    
     calendario_compacto(df)
     st.write("---")
+    
     if not df.empty:
-        df_display = df[['status', 'data', 'horario_inicio', 'horario_fim', 'evento', 'origem', 'numero_sei', 'servidor_resp']]
-        df_display.columns = ['Status', 'Data', 'Início', 'Fim', 'Descrição', 'Solicitante', 'Nº SEI', 'Lançado por']
-        st.dataframe(df_display.style.map(lambda x: f'background-color: {"#d4edda" if x=="Confirmado" else ("#fff3cd" if x=="Pré-agendado" else "#f8d7da")}', subset=['Status']), use_container_width=True, hide_index=True)
+        # Filtra a tabela para mostrar apenas o mês de referência
+        df['dt_temp'] = pd.to_datetime(df['data'], format='%d/%m/%Y')
+        df_filtrado = df[(df['dt_temp'].dt.month == st.session_state.mes_ref) & (df['dt_temp'].dt.year == st.session_state.ano_ref)]
+        
+        if not df_filtrado.empty:
+            df_display = df_filtrado[['status', 'data', 'horario_inicio', 'horario_fim', 'evento', 'origem', 'numero_sei', 'servidor_resp']]
+            df_display.columns = ['Status', 'Data', 'Início', 'Fim', 'Descrição', 'Solicitante', 'Nº SEI', 'Lançado por']
+            st.dataframe(df_display.style.map(lambda x: f'background-color: {"#d4edda" if x=="Confirmado" else ("#fff3cd" if x=="Pré-agendado" else "#f8d7da")}', subset=['Status']), use_container_width=True, hide_index=True)
+        else:
+            st.info("Nenhum evento para este mês.")
     else: st.info("Sem agendamentos.")
 
 st.subheader("🗓️ Cronograma Principal")
@@ -223,8 +241,4 @@ with t_l: exibir_tabela("Laboratório de Informática")
 with t_r: exibir_tabela("Sala de Reunião")
 
 st.markdown("---")
-s_ext = st.selectbox("Salas de Aula:", ["Selecione..."] + salas_de_aula)
-if s_ext != "Selecione...": exibir_tabela(s_ext)
-
-st.markdown("---")
-st.caption("🚀 Desenvolvido por **Marcos Candido** - Projeto de Extensão do Curso de Engenharia de Software")
+s_ext = st
