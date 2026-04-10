@@ -45,20 +45,13 @@ def salvar_reserva(sala, data, inicio, fim, evento, origem, sei, status, servido
     conn.close()
     return True
 
-# --- 2. INTERFACE E CONTROLE DE NAVEGAÇÃO ---
+# --- 2. INTERFACE E SESSÃO ---
 st.set_page_config(page_title="Gestão de Espaços - Direção", layout="wide")
 init_db()
 
-# Inicializa o estado do mês e ano se não existir
-if 'mes_ref' not in st.session_state:
-    st.session_state.mes_ref = datetime.now().month
-if 'ano_ref' not in st.session_state:
-    st.session_state.ano_ref = datetime.now().year
-
-st.title("📅 Gestão de Espaços - Direção")
-
-if 'logado' not in st.session_state:
-    st.session_state.logado = False
+if 'mes_ref' not in st.session_state: st.session_state.mes_ref = datetime.now().month
+if 'ano_ref' not in st.session_state: st.session_state.ano_ref = datetime.now().year
+if 'logado' not in st.session_state: st.session_state.logado = False
 
 # Sidebar Login
 with st.sidebar.form("login_form"):
@@ -69,59 +62,31 @@ with st.sidebar.form("login_form"):
         if u_input == "diretoriafes" and s_input == "secretariafes2021/2":
             st.session_state.logado = True
             st.rerun()
-        else:
-            st.error("Dados inválidos.")
+        else: st.error("Dados inválidos.")
 
 logado = st.session_state.logado
-abas_fixas = ["Auditório Rio Amazonas", "Laboratório de Informática", "Sala de Reunião"]
-salas_de_aula = ["Sala 1", "Sala 2", "Sala 4"] + [f"Sala {i}" for i in range(34, 62)]
-todas_as_salas = abas_fixas + salas_de_aula
+abas_fixas = ["Auditório Rio Amazonas", "Laboratório de Informática", "Sala de Reunião", "Salas de Aula"]
+salas_de_aula_list = ["Sala 1", "Sala 2", "Sala 4"] + [f"Sala {i}" for i in range(34, 62)]
+todas_as_salas = abas_fixas[:3] + salas_de_aula_list
 
 if logado:
     st.sidebar.success("Sessão Ativa")
+    if st.sidebar.button("Sair"):
+        st.session_state.logado = False
+        st.rerun()
     
     # Backup e Importação
     st.sidebar.markdown("---")
-    st.sidebar.subheader("📦 Backup e Importação")
-    
     conn = sqlite3.connect('agendamentos_direcao.db')
     df_total = pd.read_sql_query("SELECT * FROM reservas", conn)
     conn.close()
-    
     if not df_total.empty:
         output_geral = io.BytesIO()
         with pd.ExcelWriter(output_geral, engine='xlsxwriter') as writer:
             for s in todas_as_salas:
                 df_s = df_total[df_total['sala'] == s]
                 if not df_s.empty: df_s.to_excel(writer, sheet_name=s[:31], index=False)
-        
-        timestamp = datetime.now().strftime("%d_%m_%Y")
-        st.sidebar.download_button("📥 Baixar Backup Geral", output_geral.getvalue(), f"Backup_Geral_{timestamp}.xlsx")
-
-    arquivo_upload = st.sidebar.file_uploader("Importar Backup", type=["xlsx"])
-    if arquivo_upload and st.sidebar.button("🚀 Processar Importação"):
-        dict_df = pd.read_excel(arquivo_upload, sheet_name=None)
-        conn = sqlite3.connect('agendamentos_direcao.db')
-        for aba, dados in dict_df.items():
-            if 'id' in dados.columns: dados = dados.drop(columns=['id'])
-            dados.to_sql('reservas', conn, if_exists='append', index=False)
-        conn.close()
-        st.rerun()
-
-    with st.sidebar.expander("🗑️ Remover Registros"):
-        sala_l = st.selectbox("Sala", todas_as_salas, key="l_s")
-        conn = sqlite3.connect('agendamentos_direcao.db')
-        df_l = pd.read_sql_query("SELECT id, data, evento FROM reservas WHERE sala=?", conn, params=(sala_l,))
-        conn.close()
-        if not df_l.empty:
-            opc = {f"ID {row['id']} | {row['data']}": row['id'] for _, row in df_l.iterrows()}
-            it = st.selectbox("Item", list(opc.keys()))
-            if st.button("EXCLUIR"):
-                conn = sqlite3.connect('agendamentos_direcao.db')
-                conn.execute("DELETE FROM reservas WHERE id=?", (opc[it],))
-                conn.commit()
-                conn.close()
-                st.rerun()
+        st.sidebar.download_button("📥 Backup Geral (Excel)", output_geral.getvalue(), f"Backup_{datetime.now().strftime('%d_%m')}.xlsx")
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("📝 Novo Agendamento")
@@ -129,17 +94,14 @@ if logado:
     tipo_ag = st.sidebar.radio("Tipo", ["Pontual", "Por Período"])
     origem_sel = st.sidebar.selectbox("Solicitante", ["DA-FES", "DECON-FES", "DEA-FES", "DIRETORIA", "EXTERNO"])
     esp_ext = st.sidebar.text_input("Especificar Externo") if origem_sel == "EXTERNO" else ""
-    meio_sel = st.sidebar.selectbox("Meio da solicitação", ["E-mail", "SEI", "Presencial", "Outro"])
-    sei_n = st.sidebar.text_input("Nº Processo SEI") if meio_sel == "SEI" else ""
+    meio_sel = st.sidebar.selectbox("Meio", ["E-mail", "SEI", "Presencial", "Outro"])
+    sei_n = st.sidebar.text_input("Nº SEI") if meio_sel == "SEI" else ""
 
     with st.sidebar.form("form_final"):
-        if tipo_ag == "Pontual":
-            data_ev = st.date_input("Data", format="DD/MM/YYYY")
-            d_i, d_f, dias = None, None, []
+        if tipo_ag == "Pontual": data_ev = st.date_input("Data")
         else:
             c1, c2 = st.columns(2)
-            d_i = c1.date_input("Início", format="DD/MM/YYYY")
-            d_f = c2.date_input("Fim", format="DD/MM/YYYY")
+            d_i, d_f = c1.date_input("Início"), c2.date_input("Fim")
             dias = st.multiselect("Dias", ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"])
         
         h_i = st.time_input("Início", value=time(8, 0), step=1800)
@@ -148,45 +110,35 @@ if logado:
         evento = st.text_area("Finalidade/Evento")
         servidor = st.text_input("Servidor Lançador")
         
-        if st.form_submit_button("Confirmar Agendamento"):
-            if evento and servidor:
-                ori_final = esp_ext if origem_sel == "EXTERNO" else origem_sel
-                datas_lista = [data_ev] if tipo_ag == "Pontual" else []
-                if tipo_ag == "Por Período":
-                    m_d = {"Segunda":0, "Terça":1, "Quarta":2, "Quinta":3, "Sexta":4, "Sábado":5}
-                    ind = [m_d[d] for d in dias]
-                    curr = d_i
-                    while curr <= d_f:
-                        if curr.weekday() in ind: datas_lista.append(curr)
-                        curr += timedelta(days=1)
-                for d in datas_lista:
-                    salvar_reserva(sala_sel, d.strftime('%d/%m/%Y'), str(h_i), str(h_f), evento, ori_final, sei_n, st_sel, servidor)
-                st.rerun()
+        if st.form_submit_button("Confirmar"):
+            ori_final = esp_ext if origem_sel == "EXTERNO" else origem_sel
+            datas = [data_ev] if tipo_ag == "Pontual" else []
+            if tipo_ag == "Por Período":
+                m_d = {"Segunda":0, "Terça":1, "Quarta":2, "Quinta":3, "Sexta":4, "Sábado":5}
+                ind = [m_d[d] for d in dias]
+                curr = d_i
+                while curr <= d_f:
+                    if curr.weekday() in ind: datas.append(curr)
+                    curr += timedelta(days=1)
+            for d in datas:
+                salvar_reserva(sala_sel, d.strftime('%d/%m/%Y'), str(h_i)[:5], str(h_f)[:5], evento, ori_final, sei_n, st_sel, servidor)
+            st.rerun()
 
-# --- 3. COMPONENTES VISUAIS COM NAVEGAÇÃO ---
+# --- 3. COMPONENTES VISUAIS ---
 def calendario_compacto(df_sala):
-    # Botões de Navegação
     col_v1, col_v2, col_v3 = st.columns([1, 4, 1])
-    
-    if col_v1.button("◀", key=f"prev_{st.session_state.mes_ref}"):
+    if col_v1.button("◀", key=f"p_{df_sala.shape[0]}"):
         st.session_state.mes_ref -= 1
-        if st.session_state.mes_ref == 0:
-            st.session_state.mes_ref = 12
-            st.session_state.ano_ref -= 1
+        if st.session_state.mes_ref == 0: st.session_state.mes_ref = 12; st.session_state.ano_ref -= 1
         st.rerun()
-        
-    if col_v3.button("▶", key=f"next_{st.session_state.mes_ref}"):
+    if col_v3.button("▶", key=f"n_{df_sala.shape[1]}"):
         st.session_state.mes_ref += 1
-        if st.session_state.mes_ref == 13:
-            st.session_state.mes_ref = 1
-            st.session_state.ano_ref += 1
+        if st.session_state.mes_ref == 13: st.session_state.mes_ref = 1; st.session_state.ano_ref += 1
         st.rerun()
     
-    mes = st.session_state.mes_ref
-    ano = st.session_state.ano_ref
+    mes, ano = st.session_state.mes_ref, st.session_state.ano_ref
     nome_mes = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"][mes-1]
-    
-    col_v2.markdown(f"<h3 style='text-align: center; margin:0;'>{nome_mes} / {ano}</h3>", unsafe_allow_html=True)
+    col_v2.markdown(f"<p style='text-align:center; font-weight:bold;'>{nome_mes} / {ano}</p>", unsafe_allow_html=True)
     
     dias_ocupados = {}
     if not df_sala.empty:
@@ -197,48 +149,85 @@ def calendario_compacto(df_sala):
                     if dias_ocupados.get(dt.day) != 'Confirmado': dias_ocupados[dt.day] = row['status']
             except: continue
 
-    html_cal = f"<table style='width:100%; table-layout:fixed; border-collapse:collapse; text-align:center;'><tr>"
+    html_cal = "<table style='width:100%; text-align:center; border-collapse:collapse;'><tr>"
     for d in ['D','S','T','Q','Q','S','S']: html_cal += f"<th style='font-size:10px; color:gray;'>{d}</th>"
     html_cal += "</tr>"
-    
     for semana in calendar.monthcalendar(ano, mes):
         html_cal += "<tr>"
         for i, dia in enumerate(semana):
             if dia == 0: html_cal += "<td></td>"
             else:
                 status = dias_ocupados.get(dia)
-                bg = "#3D5AFE" if status == 'Confirmado' else ("#FFAB00" if status == 'Pré-agendado' else ("#fafafa" if i==0 or i==6 else "white"))
+                bg = "#3D5AFE" if status == 'Confirmado' else ("#FFAB00" if status == 'Pré-agendado' else ("#f0f0f0" if i==0 or i==6 else "white"))
                 color = "white" if status == 'Confirmado' else ("black" if status == 'Pré-agendado' else "#444")
-                html_cal += f"<td style='background-color:{bg}; color:{color}; border:1px solid #f0f0f0; border-radius:4px; font-size:12px; padding:5px;'>{dia}</td>"
+                html_cal += f"<td style='background-color:{bg}; color:{color}; border:1px solid #eee; border-radius:4px; font-size:12px; padding:4px;'>{dia}</td>"
         html_cal += "</tr>"
     st.markdown(html_cal + "</table>", unsafe_allow_html=True)
 
-def exibir_tabela(n_sala):
+def exibir_tabela(n_sala, mostrar_cal=True):
     conn = sqlite3.connect('agendamentos_direcao.db')
     df = pd.read_sql_query("SELECT * FROM reservas WHERE sala=? ORDER BY data DESC", conn, params=(n_sala,))
     conn.close()
-    
-    calendario_compacto(df)
-    st.write("---")
-    
+    if mostrar_cal: calendario_compacto(df)
     if not df.empty:
-        # Filtra a tabela para mostrar apenas o mês de referência
-        df['dt_temp'] = pd.to_datetime(df['data'], format='%d/%m/%Y')
-        df_filtrado = df[(df['dt_temp'].dt.month == st.session_state.mes_ref) & (df['dt_temp'].dt.year == st.session_state.ano_ref)]
-        
-        if not df_filtrado.empty:
-            df_display = df_filtrado[['status', 'data', 'horario_inicio', 'horario_fim', 'evento', 'origem', 'numero_sei', 'servidor_resp']]
-            df_display.columns = ['Status', 'Data', 'Início', 'Fim', 'Descrição', 'Solicitante', 'Nº SEI', 'Lançado por']
-            st.dataframe(df_display.style.map(lambda x: f'background-color: {"#d4edda" if x=="Confirmado" else ("#fff3cd" if x=="Pré-agendado" else "#f8d7da")}', subset=['Status']), use_container_width=True, hide_index=True)
-        else:
-            st.info("Nenhum evento para este mês.")
-    else: st.info("Sem agendamentos.")
+        df['dt'] = pd.to_datetime(df['data'], format='%d/%m/%Y')
+        df_f = df[(df['dt'].dt.month == st.session_state.mes_ref) & (df['dt'].dt.year == st.session_state.ano_ref)]
+        if not df_f.empty:
+            disp = df_f[['status', 'data', 'horario_inicio', 'horario_fim', 'evento', 'origem', 'servidor_resp']]
+            disp.columns = ['Status', 'Data', 'Início', 'Fim', 'Descrição', 'Origem', 'Lançador']
+            st.dataframe(disp.style.map(lambda x: f'background-color: {"#d4edda" if x=="Confirmado" else ("#fff3cd" if x=="Pré-agendado" else "#f8d7da")}', subset=['Status']), use_container_width=True, hide_index=True)
 
-st.subheader("🗓️ Cronograma Principal")
-t_a, t_l, t_r = st.tabs(abas_fixas)
-with t_a: exibir_tabela("Auditório Rio Amazonas")
-with t_l: exibir_tabela("Laboratório de Informática")
-with t_r: exibir_tabela("Sala de Reunião")
+# --- 4. ABA RESUMO SEMESTRAL (SALAS DE AULA) ---
+def resumo_semestral():
+    st.write("### 🏛️ Mapa de Ocupação Semanal - Salas de Aula")
+    conn = sqlite3.connect('agendamentos_direcao.db')
+    # Pegamos tudo que não é cancelado
+    df = pd.read_sql_query("SELECT * FROM reservas WHERE status != 'Cancelado' AND sala LIKE 'Sala%'", conn)
+    conn.close()
 
-st.markdown("---")
-s_ext = st
+    dias_semana = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"]
+    resumo_data = []
+
+    for s in salas_de_aula_list:
+        linha = {"Sala": s}
+        for d_nome in dias_semana:
+            # Lógica para encontrar o que tem nessa sala nesse dia da semana (independente da data real, focando na recorrência)
+            m_d = {"Segunda":0, "Terça":1, "Quarta":2, "Quinta":3, "Sexta":4, "Sábado":5}
+            df_sala_dia = df[(df['sala'] == s)]
+            # Filtra por dia da semana
+            df_sala_dia['dw'] = pd.to_datetime(df_sala_dia['data'], format='%d/%m/%Y').dt.weekday
+            eventos = df_sala_dia[df_sala_dia['dw'] == m_d[d_nome]]
+            
+            if not eventos.empty:
+                # Pega os horários e o departamento (origem)
+                txt = " | ".join([f"{r['horario_inicio']}-{r['horario_fim']} ({r['origem']})" for _, r in eventos.drop_duplicates(subset=['horario_inicio', 'horario_fim', 'origem']).iterrows()])
+                linha[d_nome] = txt
+            else:
+                linha[d_nome] = "-"
+        resumo_data.append(linha)
+
+    df_resumo = pd.DataFrame(resumo_data)
+    
+    # Estilização de cores por departamento
+    def colorir_origem(val):
+        if "DA-FES" in val: return 'background-color: #e3f2fd; color: #0d47a1' # Azul
+        if "DECON" in val: return 'background-color: #f1f8e9; color: #33691e' # Verde
+        if "DEA" in val: return 'background-color: #fff3e0; color: #e65100' # Laranja
+        return ''
+
+    st.dataframe(df_resumo.style.applymap(colorir_origem), use_container_width=True, hide_index=True)
+    
+    st.markdown("---")
+    st.write("#### 🔍 Detalhes por Sala")
+    s_detalhe = st.selectbox("Selecione uma sala para ver o calendário detalhado:", ["Selecione..."] + salas_de_aula_list)
+    if s_detalhe != "Selecione...":
+        exibir_tabela(s_detalhe)
+
+# --- EXECUÇÃO DAS ABAS ---
+t1, t2, t3, t4 = st.tabs(abas_fixas)
+with t1: exibir_tabela("Auditório Rio Amazonas")
+with t2: exibir_tabela("Laboratório de Informática")
+with t3: exibir_tabela("Sala de Reunião")
+with t4: resumo_semestral()
+
+st.caption("🚀 Desenvolvido por **Marcos Candido** - Projeto de Extensão do Curso de Engenharia de Software")
