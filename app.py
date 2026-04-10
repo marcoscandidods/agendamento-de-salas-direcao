@@ -99,14 +99,18 @@ with st.sidebar.form("login_form"):
     st.header("🔐 Área Restrita")
     u_input = st.text_input("Usuário")
     s_input = st.text_input("Senha", type="password")
+    
     if st.form_submit_button("Acessar Sistema"):
-        try:
+        # Verifica se as chaves existem nos Secrets antes de tentar comparar
+        if "LOGIN_USER" in st.secrets and "LOGIN_PWD" in st.secrets:
             if u_input == st.secrets["LOGIN_USER"] and s_input == st.secrets["LOGIN_PWD"]:
                 st.session_state.logado = True
                 st.rerun()
-            else: st.error("Dados inválidos.")
-        except:
-            st.error("Erro: Verifique os Secrets no Streamlit Cloud.")
+            else:
+                st.error("Usuário ou senha incorretos.")
+        else:
+            # Este erro só aparecerá se você esquecer de preencher os segredos no painel
+            st.error("Erro crítico: As chaves de login não foram configuradas nos Secrets do Streamlit.")
 
 logado = st.session_state.logado
 abas_fixas = ["Auditório Rio Amazonas", "Laboratório de Informática", "Sala de Reunião", "Salas de Aula"]
