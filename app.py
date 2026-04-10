@@ -27,7 +27,6 @@ def verificar_conflito(sala, data, inicio, fim, id_ignorar=None):
     """Verifica se existe sobreposição de horários na mesma sala e data."""
     conn = sqlite3.connect('agendamentos_direcao.db')
     c = conn.cursor()
-    # Busca agendamentos ativos (não cancelados) para a mesma sala e data
     query = "SELECT id, horario_inicio, horario_fim FROM reservas WHERE sala=? AND data=? AND status != 'Cancelado'"
     params = [sala, data]
     
@@ -47,10 +46,9 @@ def verificar_conflito(sala, data, inicio, fim, id_ignorar=None):
         ex_i = datetime.strptime(ex_i_str, format_h).time()
         ex_f = datetime.strptime(ex_f_str, format_h).time()
 
-        # Lógica de intersecção: (Início A < Fim B) E (Fim A > Início B)
         if novo_i < ex_f and novo_f > ex_i:
-            return True # Conflito detectado
-    return False # Caminho livre
+            return True 
+    return False 
 
 def atualizar_reserva(id_reserva, evento, origem, sei, status, servidor, h_i, h_f, data):
     conn = sqlite3.connect('agendamentos_direcao.db')
@@ -102,6 +100,14 @@ todas_as_salas = abas_fixas[:3] + salas_de_aula_list
 
 if logado:
     st.sidebar.success("Sessão Ativa")
+    
+    # --- AVISO LGPD ---
+    st.sidebar.warning("""
+    ⚠️ **AVISO LGPD**
+    Dados sensíveis (CPFs, contatos pessoais, etc.) **não devem** constar aqui. 
+    Estas informações devem ser mantidas apenas no processo SEI ou e-mail institucional.
+    """)
+    
     if st.sidebar.button("Sair"):
         st.session_state.logado = False
         st.rerun()
@@ -155,7 +161,6 @@ if logado:
             conflitos = []
             for d in datas:
                 d_str = d.strftime('%d/%m/%Y')
-                # Bloqueio de duplicidade
                 if verificar_conflito(sala_sel_side, d_str, str(h_i)[:5], str(h_f)[:5]):
                     conflitos.append(d_str)
                 else:
@@ -242,7 +247,6 @@ def exibir_tabela(n_sala, mostrar_cal=True):
                     new_st = c2.selectbox("Status", ["Confirmado", "Pré-agendado", "Cancelado"], 
                                              index=["Confirmado", "Pré-agendado", "Cancelado"].index(row_edit['status']), key=f"st_{id_edit}")
                     
-                    # Edição de horário também precisa de trava
                     h_i_edit = st.time_input("Novo Início", value=datetime.strptime(row_edit['horario_inicio'], '%H:%M').time(), key=f"hi_{id_edit}")
                     h_f_edit = st.time_input("Novo Término", value=datetime.strptime(row_edit['horario_fim'], '%H:%M').time(), key=f"hf_{id_edit}")
 
