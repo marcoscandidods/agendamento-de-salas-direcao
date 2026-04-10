@@ -51,7 +51,7 @@ def deletar_registro(id_registro):
     conn.commit()
     conn.close()
 
-# --- 2. INTERFACE E SEGURANÇA ---
+# --- 2. INTERFACE ---
 st.set_page_config(page_title="Sistema de Agendamento - Direção", layout="wide")
 init_db()
 
@@ -84,7 +84,6 @@ if logado:
         st.rerun()
     
     st.sidebar.markdown("---")
-    # Lixeira (Remover)
     with st.sidebar.expander("🗑️ Remover Registros"):
         sala_l = st.selectbox("Sala", todas_as_salas, key="l_s")
         conn = sqlite3.connect('agendamentos_direcao.db')
@@ -100,68 +99,71 @@ if logado:
     st.sidebar.markdown("---")
     st.sidebar.subheader("📝 Novo Agendamento")
     
-    # --- CAMPOS DINÂMICOS (FORA DO FORM PARA APARECER NA HORA) ---
+    # CAMPOS DINÂMICOS (FORA DO FORM PARA RESPOSTA IMEDIATA)
     sala_sel = st.sidebar.selectbox("Espaço", todas_as_salas)
     tipo_ag = st.sidebar.radio("Tipo", ["Pontual", "Por Período"])
     
-    # Solicitante dinâmico
     origem_opc = ["DA-FES", "DECON-FES", "DEA-FES", "DIRETORIA", "EXTERNO"]
     origem_sel = st.sidebar.selectbox("Solicitante", origem_opc)
-    especificar_externo = ""
+    esp_ext = ""
     if origem_sel == "EXTERNO":
-        especificar_externo = st.sidebar.text_input("Especificar Externo (Quem?)")
+        esp_ext = st.sidebar.text_input("Especificar Externo (Quem?)")
     
-    # Meio dinâmico
     meio_opc = ["E-mail", "SEI", "Presencial", "Outro"]
     meio_sel = st.sidebar.selectbox("Meio da solicitação", meio_opc)
-    sei_num = ""
+    sei_n = ""
     if meio_sel == "SEI":
-        sei_num = st.sidebar.text_input("Nº Processo SEI")
+        sei_n = st.sidebar.text_input("Nº Processo SEI")
 
-    # RESTANTE DO FORMULÁRIO
+    # FORMULÁRIO DE DADOS
     with st.sidebar.form("form_final"):
         if tipo_ag == "Pontual":
             data_ev = st.date_input("Data", format="DD/MM/YYYY")
+            d_i, d_f, dias = None, None, []
         else:
             c1, c2 = st.columns(2)
             d_i = c1.date_input("Início")
             d_f = c2.date_input("Fim")
             dias = st.multiselect("Dias", ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"])
+            data_ev = None
 
         h_i = st.time_input("Início", step=1800)
         h_f = st.time_input("Término", step=1800)
-        status_sel = st.selectbox("Status", ["Confirmado", "Pré-agendado", "Cancelado"])
+        st_sel = st.selectbox("Status", ["Confirmado", "Pré-agendado", "Cancelado"])
         
         conf_c = True
-        if status_sel == "Cancelado":
+        if st_sel == "Cancelado":
             conf_c = st.checkbox("Confirmar cancelamento")
         
         evento = st.text_area("Finalidade/Evento")
         servidor = st.text_input("Servidor Lançador")
         
         if st.form_submit_button("Confirmar Agendamento"):
-            if status_sel == "Cancelado" and not conf_c:
+            if st_sel == "Cancelado" and not conf_c:
                 st.error("Confirme o cancelamento.")
             elif evento and servidor:
-                # Ajusta nome se for externo
-                origem_final = especificar_externo if origem_sel == "EXTERNO" else origem_sel
+                ori_final = esp_ext if origem_sel == "EXTERNO" else origem_sel
                 
-                datas = [data_ev] if tipo_ag_ == "Pontual" else []
-                if tipo_ag == "Por Período":
+                # CORREÇÃO DA VARIÁVEL: datas
+                datas_lista = []
+                if tipo_ag == "Pontual":
+                    datas_lista = [data_ev]
+                else:
                     m = {"Segunda":0, "Terça":1, "Quarta":2, "Quinta":3, "Sexta":4, "Sábado":5}
                     ind = [m[d] for d in dias]
                     curr = d_i
                     while curr <= d_f:
-                        if curr.weekday() in ind: datas.append(curr)
+                        if curr.weekday() in ind:
+                            datas_lista.append(curr)
                         curr += timedelta(days=1)
-                elif tipo_ag == "Pontual":
-                    datas = [data_ev]
                 
-                for d in datas:
-                    salvar_reserva(sala_sel, d.strftime('%d/%m/%Y'), str(h_i), str(h_f), evento, origem_final, sei_num, status_sel, servidor)
+                sucs = 0
+                for d in datas_lista:
+                    if salvar_reserva(sala_sel, d.strftime('%d/%m/%Y'), str(h_i), str(h_f), evento, ori_final, sei_n, st_sel, servidor):
+                        sucs += 1
                 st.rerun()
             else:
-                st.warning("Preencha Finalidade e Servidor.")
+                st.warning("Preencha os campos obrigatórios.")
 
 # --- 3. VISUALIZAÇÃO ---
 def exibir_tabela(n_sala):
