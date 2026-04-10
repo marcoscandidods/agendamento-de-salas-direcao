@@ -177,18 +177,25 @@ def exibir_tabela(n_sala, mostrar_cal=True):
                          use_container_width=True, hide_index=True)
             
             if logado:
-                with st.expander("✏️ Editar ou Excluir Agendamento"):
-                    id_edit = st.selectbox("ID", disp['ID'], key=f"sel_{n_sala}")
+                with st.expander("✏️ Editar Agendamento"):
+                    id_edit = st.selectbox("Selecione o ID para editar", disp['ID'], key=f"sel_{n_sala}")
                     row_edit = df[df['id'] == id_edit].iloc[0]
                     c1, c2 = st.columns(2)
                     new_ev = c1.text_input("Finalidade", value=row_edit['evento'], key=f"ev_{id_edit}")
                     new_st = c2.selectbox("Status", ["Confirmado", "Pré-agendado", "Cancelado"], 
-                                            index=["Confirmado", "Pré-agendado", "Cancelado"].index(row_edit['status']), key=f"st_{id_edit}")
-                    if st.button("Salvar Alterações", key=f"btn_edit_{id_edit}"):
+                                             index=["Confirmado", "Pré-agendado", "Cancelado"].index(row_edit['status']), key=f"st_{id_edit}")
+                    
+                    if st.button("Salvar Alterações", key=f"btn_edit_{id_edit}", use_container_width=True):
                         atualizar_reserva(id_edit, new_ev, row_edit['origem'], row_edit['numero_sei'], new_st, row_edit['servidor_resp'], 
                                           row_edit['horario_inicio'], row_edit['horario_fim'], row_edit['data'])
+                        st.success("Alterado com sucesso!")
                         st.rerun()
-                    if st.button("❗ EXCLUIR", key=f"btn_del_{id_edit}"):
+
+                # Botão de excluir isolado em um Popover para segurança
+                with st.popover("🗑️ Excluir Registro"):
+                    st.warning(f"Você está prestes a excluir o agendamento ID: {id_edit}")
+                    confirmar = st.checkbox("Eu tenho certeza que desejo excluir definitivamente.", key=f"check_del_{id_edit}")
+                    if st.button("CONFIRMAR EXCLUSÃO", key=f"btn_del_{id_edit}", disabled=not confirmar, type="primary", use_container_width=True):
                         conn = sqlite3.connect('agendamentos_direcao.db')
                         conn.execute("DELETE FROM reservas WHERE id=?", (id_edit,))
                         conn.commit(); conn.close()
@@ -196,7 +203,7 @@ def exibir_tabela(n_sala, mostrar_cal=True):
 
 # --- 4. ABA RESUMO SEMESTRAL ---
 def resumo_semestral():
-    st.write("### 🏛️ Mapa de Ocupação Semanal - Salas de Aula")
+    st.write("### 🏛️ Ocupação Semanal - Salas de Aula")
     conn = sqlite3.connect('agendamentos_direcao.db')
     df = pd.read_sql_query("SELECT * FROM reservas WHERE status != 'Cancelado' AND sala LIKE 'Sala%'", conn)
     conn.close()
