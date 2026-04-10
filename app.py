@@ -49,6 +49,9 @@ def salvar_reserva(sala, data, inicio, fim, evento, origem, sei, status, servido
 st.set_page_config(page_title="Gestão de Espaços - Direção", layout="wide")
 init_db()
 
+# TÍTULO PRINCIPAL (Posicionado no topo para não sumir)
+st.title("📅 Gestão de Espaços - Direção")
+
 if 'mes_ref' not in st.session_state: st.session_state.mes_ref = datetime.now().month
 if 'ano_ref' not in st.session_state: st.session_state.ano_ref = datetime.now().year
 if 'logado' not in st.session_state: st.session_state.logado = False
@@ -142,7 +145,6 @@ if logado:
 
 # --- 3. COMPONENTES VISUAIS ---
 def calendario_compacto(df_sala, n_sala):
-    # CHAVE ÚNICA PARA OS BOTÕES (Resolve o erro do Streamlit)
     col_v1, col_v2, col_v3 = st.columns([1, 4, 1])
     if col_v1.button("◀", key=f"prev_{n_sala}"):
         st.session_state.mes_ref -= 1
@@ -193,6 +195,7 @@ def exibir_tabela(n_sala, mostrar_cal=True):
         if not df_f.empty:
             disp = df_f[['status', 'data', 'horario_inicio', 'horario_fim', 'evento', 'origem', 'servidor_resp']]
             disp.columns = ['Status', 'Data', 'Início', 'Fim', 'Descrição', 'Origem', 'Lançador']
+            # AJUSTADO: applymap para map
             st.dataframe(disp.style.map(lambda x: f'background-color: {"#d4edda" if x=="Confirmado" else ("#fff3cd" if x=="Pré-agendado" else "#f8d7da")}', subset=['Status']), use_container_width=True, hide_index=True)
 
 # --- 4. ABA RESUMO SEMESTRAL ---
@@ -210,11 +213,13 @@ def resumo_semestral():
         for d_nome in dias_semana:
             m_d = {"Segunda":0, "Terça":1, "Quarta":2, "Quinta":3, "Sexta":4, "Sábado":5}
             df_sala_dia = df[df['sala'] == s].copy()
-            df_sala_dia['dw'] = pd.to_datetime(df_sala_dia['data'], format='%d/%m/%Y').dt.weekday
-            eventos = df_sala_dia[df_sala_dia['dw'] == m_d[d_nome]]
-            if not eventos.empty:
-                txt = " | ".join([f"{r['horario_inicio']}-{r['horario_fim']} ({r['origem']})" for _, r in eventos.drop_duplicates(subset=['horario_inicio', 'horario_fim', 'origem']).iterrows()])
-                linha[d_nome] = txt
+            if not df_sala_dia.empty:
+                df_sala_dia['dw'] = pd.to_datetime(df_sala_dia['data'], format='%d/%m/%Y').dt.weekday
+                eventos = df_sala_dia[df_sala_dia['dw'] == m_d[d_nome]]
+                if not eventos.empty:
+                    txt = " | ".join([f"{r['horario_inicio']}-{r['horario_fim']} ({r['origem']})" for _, r in eventos.drop_duplicates(subset=['horario_inicio', 'horario_fim', 'origem']).iterrows()])
+                    linha[d_nome] = txt
+                else: linha[d_nome] = "-"
             else: linha[d_nome] = "-"
         resumo_data.append(linha)
 
@@ -227,7 +232,8 @@ def resumo_semestral():
         if "DIRETORIA" in val: return 'background-color: #f3e5f5; color: #4a148c'
         return ''
 
-    st.dataframe(df_resumo.style.applymap(colorir_celula), use_container_width=True, hide_index=True)
+    # CORREÇÃO AQUI: Mudança de applymap para map para evitar o erro do print
+    st.dataframe(df_resumo.style.map(colorir_celula), use_container_width=True, hide_index=True)
     
     st.markdown("---")
     st.write("#### 🔍 Detalhes por Sala")
