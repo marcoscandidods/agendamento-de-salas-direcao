@@ -72,7 +72,6 @@ if logado:
         st.session_state.logado = False
         st.rerun()
     
-    # Backup
     st.sidebar.markdown("---")
     conn = sqlite3.connect('agendamentos_direcao.db')
     df_total = pd.read_sql_query("SELECT * FROM reservas", conn)
@@ -85,7 +84,6 @@ if logado:
                 if not df_s.empty: df_s.to_excel(writer, sheet_name=s[:31], index=False)
         st.sidebar.download_button("📥 Backup Geral", output_geral.getvalue(), f"Backup_{datetime.now().strftime('%d_%m_%Y')}.xlsx")
 
-    # Cadastro
     st.sidebar.markdown("---")
     st.sidebar.subheader("📝 Novo Agendamento")
     sala_sel_side = st.sidebar.selectbox("Espaço", todas_as_salas, key="side_sala")
@@ -157,9 +155,9 @@ def calendario_compacto(df_sala, n_sala):
             if dia == 0: html_cal += "<td></td>"
             else:
                 status = dias_ocupados.get(dia)
-                bg = "#3D5AFE" if status == 'Confirmado' else ("#FFAB00" if status == 'Pré-agendado' else ("#f0f0f0" if i==0 or i==6 else "white"))
-                color = "white" if status == 'Confirmado' else ("black" if status == 'Pré-agendado' else "#444")
-                html_cal += f"<td style='background-color:{bg}; color:{color}; border:1px solid #eee; border-radius:4px; font-size:12px; padding:4px;'>{dia}</td>"
+                bg = "#2563EB" if status == 'Confirmado' else ("#D97706" if status == 'Pré-agendado' else ("#f3f4f6" if i==0 or i==6 else "transparent"))
+                color = "white" if status in ['Confirmado', 'Pré-agendado'] else "#4b5563"
+                html_cal += f"<td style='background-color:{bg}; color:{color}; border:1px solid #e5e7eb; border-radius:4px; font-size:12px; padding:6px; font-weight:bold;'>{dia}</td>"
         html_cal += "</tr>"
     st.markdown(html_cal + "</table>", unsafe_allow_html=True)
 
@@ -175,32 +173,25 @@ def exibir_tabela(n_sala, mostrar_cal=True):
         if not df_f.empty:
             disp = df_f[['id', 'status', 'data', 'horario_inicio', 'horario_fim', 'evento', 'origem', 'servidor_resp']]
             disp.columns = ['ID', 'Status', 'Data', 'Início', 'Fim', 'Descrição', 'Origem', 'Lançador']
-            # REMOÇÃO DE LINKS: Através do column_config
-            st.dataframe(disp.style.map(lambda x: f'background-color: {"#d4edda" if x=="Confirmado" else ("#fff3cd" if x=="Pré-agendado" else "#f8d7da")}', subset=['Status']), 
+            st.dataframe(disp.style.map(lambda x: f'background-color: {"#16a34a" if x=="Confirmado" else ("#ca8a04" if x=="Pré-agendado" else "#dc2626")}; color: white; font-weight: bold', subset=['Status']), 
                          use_container_width=True, hide_index=True)
             
-            # MODAL DE EDIÇÃO
             if logado:
                 with st.expander("✏️ Editar ou Excluir Agendamento"):
-                    id_edit = st.selectbox("Selecione o ID para editar", disp['ID'], key=f"sel_{n_sala}")
+                    id_edit = st.selectbox("ID", disp['ID'], key=f"sel_{n_sala}")
                     row_edit = df[df['id'] == id_edit].iloc[0]
-                    
-                    col1, col2 = st.columns(2)
-                    new_ev = col1.text_input("Nova Finalidade", value=row_edit['evento'], key=f"ev_{id_edit}")
-                    new_st = col2.selectbox("Novo Status", ["Confirmado", "Pré-agendado", "Cancelado"], 
+                    c1, c2 = st.columns(2)
+                    new_ev = c1.text_input("Finalidade", value=row_edit['evento'], key=f"ev_{id_edit}")
+                    new_st = c2.selectbox("Status", ["Confirmado", "Pré-agendado", "Cancelado"], 
                                             index=["Confirmado", "Pré-agendado", "Cancelado"].index(row_edit['status']), key=f"st_{id_edit}")
-                    
                     if st.button("Salvar Alterações", key=f"btn_edit_{id_edit}"):
                         atualizar_reserva(id_edit, new_ev, row_edit['origem'], row_edit['numero_sei'], new_st, row_edit['servidor_resp'], 
                                           row_edit['horario_inicio'], row_edit['horario_fim'], row_edit['data'])
-                        st.success("Atualizado!")
                         st.rerun()
-                    
-                    if st.button("❗ EXCLUIR DEFINITIVAMENTE", key=f"btn_del_{id_edit}"):
+                    if st.button("❗ EXCLUIR", key=f"btn_del_{id_edit}"):
                         conn = sqlite3.connect('agendamentos_direcao.db')
                         conn.execute("DELETE FROM reservas WHERE id=?", (id_edit,))
-                        conn.commit()
-                        conn.close()
+                        conn.commit(); conn.close()
                         st.rerun()
 
 # --- 4. ABA RESUMO SEMESTRAL ---
@@ -229,20 +220,19 @@ def resumo_semestral():
 
     df_resumo = pd.DataFrame(resumo_data)
 
-    # CORES FORTES E NÍTIDAS
     def colorir_celula(val):
-        if "DA-FES" in val: return 'background-color: #1565C0; color: white; font-weight: bold' # Azul Forte
-        if "DECON" in val: return 'background-color: #2E7D32; color: white; font-weight: bold' # Verde Forte
-        if "DEA" in val: return 'background-color: #EF6C00; color: white; font-weight: bold' # Laranja Forte
-        if "DIRETORIA" in val: return 'background-color: #6A1B9A; color: white; font-weight: bold' # Roxo Forte
-        return 'color: #757575'
+        if "DA-FES" in val: return 'background-color: #1e40af; color: white; font-weight: bold'
+        if "DECON" in val: return 'background-color: #166534; color: white; font-weight: bold'
+        if "DEA" in val: return 'background-color: #9a3412; color: white; font-weight: bold'
+        if "DIRETORIA" in val: return 'background-color: #6b21a8; color: white; font-weight: bold'
+        return 'color: #9ca3af'
 
     st.dataframe(df_resumo.style.map(colorir_celula), use_container_width=True, hide_index=True)
     
     st.markdown("---")
     st.write("#### 🔍 Detalhes por Sala")
-    s_detalhe = st.selectbox("Escolha uma sala:", ["Selecione..."] + salas_de_aula_list, key="sel_aula")
-    if s_detalhe != "Selecione...": exibir_tabela(s_detalhe)
+    s_det = st.selectbox("Escolha uma sala:", ["Selecione..."] + salas_de_aula_list, key="sel_aula")
+    if s_det != "Selecione...": exibir_tabela(s_det)
 
 # --- EXECUÇÃO ---
 t1, t2, t3, t4 = st.tabs(abas_fixas)
@@ -251,4 +241,10 @@ with t2: exibir_tabela("Laboratório de Informática")
 with t3: exibir_tabela("Sala de Reunião")
 with t4: resumo_semestral()
 
-st.caption("🚀 Desenvolvido por **Marcos Candido** - Projeto de Extensão do Curso de Engenharia de Software")
+# --- RODAPÉ CENTRALIZADO E MAIS ABAIXO ---
+st.markdown("<br><br><br><br>", unsafe_allow_html=True)
+st.markdown("""
+    <div style='text-align: center; color: #6b7280; font-size: 14px;'>
+        🚀 Desenvolvido por <b>Marcos Candido</b> - Projeto de Extensão do Curso de Engenharia de Software
+    </div>
+    """, unsafe_allow_html=True)
