@@ -203,4 +203,4 @@ if sala_extra != "Selecione uma sala...":
     exibir_tabela(sala_extra)
 
 st.markdown("---")
-st.caption("🚀 Desenvolvido por **Marcos Candido** - Projeto de Extensão Engenharia de Software")
+st.caption("🚀 Desenvolvido por **Marcos Candido** - Projeto de Extensão do Curso de Engenharia de Software")
