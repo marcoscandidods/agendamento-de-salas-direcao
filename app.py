@@ -1,7 +1,7 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 import calendar
 import io
 
@@ -126,8 +126,14 @@ if logado:
             dias = st.multiselect("Dias", ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"])
             data_ev = None
 
-        h_i = st.time_input("Início", step=1800)
-        h_f = st.time_input("Término", step=1800)
+        # AJUSTE DE HORÁRIO: Limitado entre 08:00 e 22:00
+        h_i = st.time_input("Início", value=time(8, 0), step=1800)
+        h_f = st.time_input("Término", value=time(9, 0), step=1800)
+        
+        # Validação simples de horário no front-end
+        if h_i < time(8, 0) or h_i > time(22, 0):
+            st.warning("Horário de funcionamento: 08h às 22h")
+        
         st_sel = st.selectbox("Status", ["Confirmado", "Pré-agendado", "Cancelado"])
         
         conf_c = True
@@ -140,6 +146,8 @@ if logado:
         if st.form_submit_button("Confirmar Agendamento"):
             if st_sel == "Cancelado" and not conf_c:
                 st.error("Confirme o cancelamento.")
+            elif h_i < time(8,0) or h_f > time(22,0):
+                st.error("Erro: Agendamentos apenas entre 08:00 e 22:00.")
             elif evento and servidor:
                 ori_final = esp_ext if origem_sel == "EXTERNO" else origem_sel
                 datas_lista = []
@@ -157,13 +165,13 @@ if logado:
                     salvar_reserva(sala_sel, d.strftime('%d/%m/%Y'), str(h_i), str(h_f), evento, ori_final, sei_n, st_sel, servidor)
                 st.rerun()
 
-# --- 3. FUNÇÃO DE CALENDÁRIO COMPACTO ---
-def mini_calendario_ocupacao(df_sala):
+# --- 3. FUNÇÃO DE CALENDÁRIO EM GRADE (SEMANAL) ---
+def calendario_grade_ocupacao(df_sala):
     hoje = datetime.now()
     ano, mes = hoje.year, hoje.month
     nome_mes = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"][mes-1]
     
-    st.write(f"🔍 **Ocupação em {nome_mes}/{ano}:**")
+    st.write(f"🔍 **Disponibilidade - {nome_mes}/{ano}**")
     
     # Mapeia dias ocupados
     dias_ocupados = {}
@@ -172,25 +180,40 @@ def mini_calendario_ocupacao(df_sala):
             try:
                 dt = datetime.strptime(row['data'], '%d/%m/%Y')
                 if dt.year == ano and dt.month == mes:
-                    dias_ocupados[dt.day] = row['status']
+                    # Prioriza 'Confirmado' na cor do calendário
+                    if dias_ocupados.get(dt.day) != 'Confirmado':
+                        dias_ocupados[dt.day] = row['status']
             except: continue
 
-    # Cria a visualização em colunas pequenas (7 dias por linha)
-    num_dias = calendar.monthrange(ano, mes)[1]
-    cols = st.columns(15) # Exibe 15 dias por linha para ficar bem pequeno
-    
-    for dia in range(1, num_dias + 1):
-        idx = (dia - 1) % 15
-        with cols[idx]:
-            status_dia = dias_ocupados.get(dia)
-            if status_dia == 'Confirmado':
-                st.markdown(f"<div style='text-align:center; background-color:#3D5AFE; color:white; border-radius:5px; padding:2px; font-size:12px;'>{dia}</div>", unsafe_allow_html=True)
-            elif status_dia == 'Pré-agendado':
-                st.markdown(f"<div style='text-align:center; background-color:#FFAB00; color:black; border-radius:5px; padding:2px; font-size:12px;'>{dia}</div>", unsafe_allow_html=True)
+    # Configuração da Grade (7 colunas para os dias da semana)
+    dias_semana_abrev = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]
+    cabecalho = st.columns(7)
+    for i, nome_d in enumerate(dias_semana_abrev):
+        cabecalho[i].markdown(f"<p style='text-align:center; font-weight:bold; margin-bottom:0;'>{nome_d}</p>", unsafe_allow_html=True)
+
+    # Lógica de preenchimento do calendário
+    cal = calendar.monthcalendar(ano, mes)
+    for semana in cal:
+        cols = st.columns(7)
+        for i, dia in enumerate(semana):
+            if dia == 0:
+                cols[i].write("") # Espaço vazio para dias fora do mês
             else:
-                st.markdown(f"<div style='text-align:center; background-color:#eeeeee; color:#999999; border-radius:5px; padding:2px; font-size:12px;'>{dia}</div>", unsafe_allow_html=True)
-        if dia == 15: # Pula linha após 15 dias
-            cols = st.columns(15)
+                status_dia = dias_ocupados.get(dia)
+                cor = "#eeeeee" # Cinza (Livre)
+                texto = "#999999"
+                
+                if status_dia == 'Confirmado':
+                    cor, texto = "#3D5AFE", "white"
+                elif status_dia == 'Pré-agendado':
+                    cor, texto = "#FFAB00", "black"
+                
+                cols[i].markdown(f"""
+                    <div style='text-align:center; background-color:{cor}; color:{texto}; 
+                    border-radius:4px; padding:5px; margin:2px; font-size:14px; font-weight:bold;'>
+                    {dia}
+                    </div>
+                """, unsafe_allow_html=True)
 
 # --- 4. VISUALIZAÇÃO ---
 def exibir_tabela(n_sala):
@@ -198,8 +221,8 @@ def exibir_tabela(n_sala):
     df = pd.read_sql_query("SELECT * FROM reservas WHERE sala=? ORDER BY data DESC", conn, params=(n_sala,))
     conn.close()
 
-    # Exibe o mini calendário no topo
-    mini_calendario_ocupacao(df)
+    # Exibe o calendário em grade no topo
+    calendario_grade_ocupacao(df)
     st.markdown("<br>", unsafe_allow_html=True)
 
     if not df.empty:
