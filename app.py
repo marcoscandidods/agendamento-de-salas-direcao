@@ -99,6 +99,7 @@ if logado:
     st.sidebar.markdown("---")
     st.sidebar.subheader("📝 Novo Agendamento")
     
+    # CAMPOS DINÂMICOS (FORA DO FORM PARA APARECER NA HORA)
     sala_sel = st.sidebar.selectbox("Espaço", todas_as_salas)
     tipo_ag = st.sidebar.radio("Tipo", ["Pontual", "Por Período"])
     
@@ -116,7 +117,7 @@ if logado:
 
     with st.sidebar.form("form_final"):
         if tipo_ag == "Pontual":
-            data_ev = st.date_input("Data", format="DD/MM/YYYY")
+            data_ev = st.date_input("Data do Evento", format="DD/MM/YYYY")
             d_i, d_f, dias = None, None, []
         else:
             c1, c2 = st.columns(2)
@@ -157,7 +158,7 @@ if logado:
                     salvar_reserva(sala_sel, d.strftime('%d/%m/%Y'), str(h_i), str(h_f), evento, ori_final, sei_n, st_sel, servidor)
                 st.rerun()
             else:
-                st.warning("Preencha os campos obrigatórios.")
+                st.warning("Preencha Finalidade e Servidor.")
 
 # --- 3. VISUALIZAÇÃO ---
 def exibir_tabela(n_sala):
@@ -165,17 +166,16 @@ def exibir_tabela(n_sala):
     df = pd.read_sql_query("SELECT * FROM reservas WHERE sala=? ORDER BY data DESC", conn, params=(n_sala,))
     conn.close()
 
-    # Visualização de Calendário rápido (Dias com agendamento)
+    # --- CALENDÁRIO VISÍVEL NO TOPO ---
+    st.write(f"📅 **Calendário de Ocupação: {n_sala}**")
+    # Mostra o calendário fixo (o usuário pode navegar pelos meses nele)
+    st.date_input("Consulte os dias ocupados no calendário abaixo:", value=datetime.now(), key=f"cal_fixo_{n_sala}")
+
     if not df.empty:
-        st.write(f"📅 **Visão Rápida de Ocupação:**")
-        datas_ocupadas = pd.to_datetime(df[df['status'] != 'Cancelado']['data'], format='%d/%m/%Y')
-        st.date_input(f"Selecione para ver detalhes ({n_sala})", value=None, key=f"cal_{n_sala}")
-        
-        # Ajuste de Colunas: Status em primeiro, sem ID
         df_display = df.copy()
-        # Reordenando: Status, Data, Início, Fim, Descrição, Solicitante, SEI, Servidor
+        # Status em primeiro, sem ID e sem Solicitante (campo removido conforme pedido)
         df_display = df_display[['status', 'data', 'horario_inicio', 'horario_fim', 'evento', 'origem', 'numero_sei', 'servidor_resp']]
-        df_display.columns = ['Status', 'Data', 'Início', 'Fim', 'Descrição', 'Solicitante', 'Nº SEI', 'Lançado por']
+        df_display.columns = ['Status', 'Data', 'Início', 'Fim', 'Descrição', 'Origem', 'Nº SEI', 'Lançado por']
         
         cores = {'Confirmado': '#d4edda', 'Pré-agendado': '#fff3cd', 'Cancelado': '#f8d7da'}
         st.dataframe(df_display.style.map(lambda x: f'background-color: {cores.get(x, "#ffffff")}; color: black', subset=['Status']), 
@@ -187,13 +187,14 @@ def exibir_tabela(n_sala):
                 df_display.to_excel(wr, index=False)
             st.download_button(f"📥 Excel - {n_sala}", out.getvalue(), f"{n_sala}.xlsx", key=f"d_{n_sala}")
     else:
-        st.info(f"Sem agendamentos para {n_sala}.")
+        st.info(f"Sem agendamentos registrados para {n_sala}.")
 
 st.subheader("🗓️ Cronograma Principal")
 t1, t2, t3 = st.tabs(abas_fixas)
 with t1: exibir_tabela("Auditório Rio Amazonas")
 with t2: exibir_tabela("Laboratório de Informática")
 with t3: exibir_tabela("Sala de Reunião")
+
 st.markdown("---")
 s_ext = st.selectbox("Salas de Aula:", ["Selecione..."] + salas_de_aula)
 if s_ext != "Selecione...": exibir_tabela(s_ext)
