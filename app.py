@@ -15,7 +15,6 @@ def init_db():
                   horario_inicio TEXT,
                   horario_fim TEXT,
                   evento TEXT,
-                  solicitante TEXT,
                   origem TEXT,
                   numero_sei TEXT,
                   status TEXT,
@@ -34,13 +33,13 @@ def verificar_conflito(sala, data, inicio, fim):
     conn.close()
     return conflito
 
-def salvar_reserva(sala, data, inicio, fim, evento, solicitante, origem, sei, status, servidor):
+def salvar_reserva(sala, data, inicio, fim, evento, origem, sei, status, servidor):
     if status != "Cancelado" and verificar_conflito(sala, data, inicio, fim):
         return False
     conn = sqlite3.connect('agendamentos_direcao.db')
     c = conn.cursor()
-    c.execute("""INSERT INTO reservas (sala, data, horario_inicio, horario_fim, evento, solicitante, origem, numero_sei, status, servidor_resp) 
-                 VALUES (?,?,?,?,?,?,?,?,?,?)""", (sala, data, inicio, fim, evento, solicitante, origem, sei, status, servidor))
+    c.execute("""INSERT INTO reservas (sala, data, horario_inicio, horario_fim, evento, origem, numero_sei, status, servidor_resp) 
+                 VALUES (?,?,?,?,?,?,?,?,?)""", (sala, data, inicio, fim, evento, origem, sei, status, servidor))
     conn.commit()
     conn.close()
     return True
@@ -58,7 +57,7 @@ init_db()
 
 st.title("📅 Gestão de Espaços - Direção")
 
-# --- SISTEMA DE LOGIN COM BOTÃO ---
+# Sistema de Login
 if 'logado' not in st.session_state:
     st.session_state.logado = False
 
@@ -71,145 +70,119 @@ with st.sidebar.form("login_form"):
     if btn_login:
         if usuario_input == "diretoriafes" and senha_input == "secretariafes2021/2":
             st.session_state.logado = True
-            st.success("Acesso autorizado!")
             st.rerun()
         else:
-            st.error("Usuário ou senha inválidos.")
+            st.error("Dados inválidos.")
 
 logado = st.session_state.logado
 
-# Definição das Salas
 abas_fixas = ["Auditório Rio Amazonas", "Laboratório de Informática", "Sala de Reunião"]
 salas_de_aula = ["Sala 1", "Sala 2", "Sala 4"] + [f"Sala {i}" for i in range(34, 62)]
 todas_as_salas = abas_fixas + salas_de_aula
 
 if logado:
-    st.sidebar.success("Sessão Ativa: Diretoria")
-    if st.sidebar.button("Sair / Logoff"):
+    st.sidebar.success("Sessão Ativa")
+    if st.sidebar.button("Sair"):
         st.session_state.logado = False
         st.rerun()
     
-    # --- MÓDULO DE BACKUP ---
     st.sidebar.markdown("---")
-    st.sidebar.subheader("🛡️ Segurança e Backup")
-    if st.sidebar.button("✅ Marcar Backup Semanal como FEITO"):
+    if st.sidebar.button("✅ Marcar Backup como FEITO"):
         st.balloons()
-        st.sidebar.success(f"Backup confirmado em: {datetime.now().strftime('%d/%m/%Y')}")
 
-    # --- MÓDULO DE EXCLUSÃO (LIMPEZA) ---
-    st.sidebar.markdown("---")
-    with st.sidebar.expander("🗑️ Gerenciar/Remover Registros"):
-        sala_limpeza = st.selectbox("Sala para limpeza", todas_as_salas)
+    with st.sidebar.expander("🗑️ Remover Registros"):
+        sala_limp = st.selectbox("Sala", todas_as_salas, key="limp_sala")
         conn = sqlite3.connect('agendamentos_direcao.db')
-        df_limp = pd.read_sql_query("SELECT id, data, evento FROM reservas WHERE sala=?", conn, params=(sala_limpeza,))
+        df_l = pd.read_sql_query("SELECT id, data, evento FROM reservas WHERE sala=?", conn, params=(sala_limp,))
         conn.close()
-        
-        if not df_limp.empty:
-            opcoes_excluir = {f"ID {row['id']} | {row['data']} | {row['evento'][:20]}...": row['id'] for _, row in df_limp.iterrows()}
-            item_sel = st.selectbox("Selecione o registro para APAGAR", list(opcoes_excluir.keys()))
-            if st.button("❗ EXCLUIR PERMANENTEMENTE"):
-                deletar_registro(opcoes_excluir[item_sel])
-                st.sidebar.warning("Registro removido.")
+        if not df_l.empty:
+            opc = {f"ID {row['id']} | {row['data']}": row['id'] for _, row in df_l.iterrows()}
+            it = st.selectbox("Item", list(opc.keys()))
+            if st.button("EXCLUIR"):
+                deletar_registro(opc[it])
                 st.rerun()
-        else:
-            st.write("Nenhum registro encontrado.")
 
-    st.warning("**⚠️ AVISO LGPD:** As informações são públicas. Use o SEI/E-mail para dados sensíveis.")
-    
     st.sidebar.markdown("---")
-    tipo_agendamento = st.sidebar.radio("Tipo de Agendamento", ["Pontual", "Por Período (Recorrente)"])
+    tipo = st.sidebar.radio("Tipo", ["Pontual", "Por Período"])
     
     with st.sidebar.form("form_reserva"):
-        sala_sel = st.selectbox("Selecione o Espaço", todas_as_salas)
-        if tipo_agendamento == "Pontual":
-            data_evento = st.date_input("Data do Evento", format="DD/MM/YYYY")
+        sala_sel = st.selectbox("Espaço", todas_as_salas)
+        if tipo == "Pontual":
+            data_ev = st.date_input("Data", format="DD/MM/YYYY")
         else:
-            col_a, col_b = st.columns(2)
-            d_ini = col_a.date_input("Início")
-            d_fim = col_b.date_input("Fim")
-            dias_sem = st.multiselect("Dias", ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"])
+            c1, c2 = st.columns(2)
+            d_i = c1.date_input("Início")
+            d_f = c2.date_input("Fim")
+            dias = st.multiselect("Dias", ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"])
 
-        h_ini = st.time_input("Início", step=1800)
-        h_fim = st.time_input("Término", step=1800)
-        status_sel = st.selectbox("Status", ["Confirmado", "Pré-agendado", "Cancelado"])
+        h_i = st.time_input("Início", step=1800)
+        h_f = st.time_input("Término", step=1800)
+        status = st.selectbox("Status", ["Confirmado", "Pré-agendado", "Cancelado"])
         
-        conf_cancel = True
-        if status_sel == "Cancelado":
-            st.error("⚠️ REGISTRO DE CANCELAMENTO")
-            conf_cancel = st.checkbox("Confirmo o cancelamento desta reserva.")
+        conf_c = True
+        if status == "Cancelado":
+            conf_c = st.checkbox("Confirmar cancelamento")
         
         evento = st.text_area("Finalidade/Evento")
-        solicitante = st.text_input("Solicitante")
-        servidor_resp = st.text_input("Servidor Lançador")
-        origem_opc = ["DA-FES", "DECON-FES", "DEA-FES", "DIRETORIA", "EXTERNO"]
-        origem_sel = st.selectbox("Departamento de Origem", origem_opc)
-        meio_solicitacao = st.selectbox("Meio ou forma da solicitação", ["SEI", "E-mail", "Presencial", "Outro"])
+        servidor = st.text_input("Servidor Lançador")
+        origem = st.selectbox("Departamento", ["DA-FES", "DECON-FES", "DEA-FES", "DIRETORIA", "EXTERNO"])
+        meio = st.selectbox("Meio da solicitação", ["E-mail", "SEI", "Presencial", "Outro"])
         
+        # AJUSTE: O campo SEI só aparece se a opção SEI for selecionada
         sei_num = ""
-        if meio_solicitacao == "SEI":
+        if meio == "SEI":
             sei_num = st.text_input("Nº Processo SEI")
             
-        btn_salvar = st.form_submit_button("Confirmar Agendamento")
+        btn_s = st.form_submit_button("Confirmar Agendamento")
 
-    if btn_salvar:
-        if status_sel == "Cancelado" and not conf_cancel:
+    if btn_s:
+        if status == "Cancelado" and not conf_c:
             st.sidebar.error("Confirme o cancelamento.")
-        elif evento and solicitante and servidor_resp:
-            datas = [data_evento] if tipo_agendamento == "Pontual" else []
-            if tipo_agendamento != "Pontual":
-                mapa = {"Segunda":0, "Terça":1, "Quarta":2, "Quinta":3, "Sexta":4, "Sábado":5}
-                indices = [mapa[d] for d in dias_sem]
-                curr = d_ini
-                while curr <= d_fim:
-                    if curr.weekday() in indices: datas.append(curr)
+        elif evento and servidor:
+            datas = [data_ev] if tipo == "Pontual" else []
+            if tipo != "Pontual":
+                m = {"Segunda":0, "Terça":1, "Quarta":2, "Quinta":3, "Sexta":4, "Sábado":5}
+                ind = [m[d] for d in dias]
+                curr = d_i
+                while curr <= d_f:
+                    if curr.weekday() in ind: datas.append(curr)
                     curr += timedelta(days=1)
-
-            sucessos = 0
+            
+            sucs = 0
             for d in datas:
-                if salvar_reserva(sala_sel, d.strftime('%d/%m/%Y'), str(h_ini), str(h_fim), evento, solicitante, origem_sel, sei_num, status_sel, servidor_resp):
-                    sucessos += 1
-            st.sidebar.success(f"{sucessos} registro(s) salvo(s)!")
+                if salvar_reserva(sala_sel, d.strftime('%d/%m/%Y'), str(h_i), str(h_f), evento, origem, sei_num, status, servidor):
+                    sucs += 1
             st.rerun()
-        else:
-            st.sidebar.warning("⚠️ Preencha os campos obrigatórios.")
-else:
-    st.sidebar.info("Acesso restrito. Utilize o formulário acima para gerenciar o sistema.")
 
-# --- 3. VISUALIZAÇÃO PÚBLICA ---
-def exibir_tabela(nome_sala):
+# --- 3. VISUALIZAÇÃO ---
+def exibir_tabela(n_sala):
     conn = sqlite3.connect('agendamentos_direcao.db')
-    df = pd.read_sql_query("SELECT * FROM reservas WHERE sala=? ORDER BY data DESC, horario_inicio ASC", conn, params=(nome_sala,))
+    df = pd.read_sql_query("SELECT * FROM reservas WHERE sala=? ORDER BY data DESC", conn, params=(n_sala,))
     conn.close()
-    
     if not df.empty:
-        df_display = df.copy()
-        df_display.columns = ['ID', 'Sala', 'Data', 'Início', 'Fim', 'Descrição', 'Solicitante', 'Origem', 'Nº SEI', 'Status', 'Lançado por']
-        df_display = df_display.drop(columns=['Sala'])
-        
+        df = df.drop(columns=['sala'])
+        df.columns = ['ID', 'Data', 'Início', 'Fim', 'Descrição', 'Origem', 'Nº SEI', 'Status', 'Lançado por']
         cores = {'Confirmado': '#d4edda', 'Pré-agendado': '#fff3cd', 'Cancelado': '#f8d7da'}
-        st.dataframe(df_display.style.map(lambda x: f'background-color: {cores.get(x, "#ffffff")}; color: black', subset=['Status']), 
-                     use_container_width=True, hide_index=True)
+        st.dataframe(df.style.map(lambda x: f'background-color: {cores.get(x, "#ffffff")}; color: black', subset=['Status']), use_container_width=True, hide_index=True)
         
         if logado:
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df_display.to_excel(writer, index=False)
-            st.download_button(label=f"📥 Baixar Excel - {nome_sala}", data=output.getvalue(), file_name=f"{nome_sala}.xlsx", key=f"btn_{nome_sala}")
+            try:
+                out = io.BytesIO()
+                with pd.ExcelWriter(out, engine='xlsxwriter') as wr:
+                    df.to_excel(wr, index=False)
+                st.download_button(f"📥 Excel - {n_sala}", out.getvalue(), f"{n_sala}.xlsx", key=f"d_{n_sala}")
+            except ImportError:
+                st.error("Instale o 'xlsxwriter' no GitHub (requirements.txt)")
     else:
-        st.info(f"Nenhum agendamento para {nome_sala}.")
+        st.info(f"Sem agendamentos para {n_sala}.")
 
 st.subheader("🗓️ Cronograma Principal")
-tab_audit, tab_lab, tab_reuniao = st.tabs(abas_fixas)
-
-with tab_audit: exibir_tabela("Auditório Rio Amazonas")
-with tab_lab: exibir_tabela("Laboratório de Informática")
-with tab_reuniao: exibir_tabela("Sala de Reunião")
-
-st.markdown("---")
-st.subheader("🔍 Salas de Aula")
-sala_extra = st.selectbox("Selecione uma sala de aula:", ["Selecione uma sala..."] + salas_de_aula)
-if sala_extra != "Selecione uma sala...":
-    exibir_tabela(sala_extra)
+t1, t2, t3 = st.tabs(abas_fixas)
+with t1: exibir_tabela("Auditório Rio Amazonas")
+with t2: exibir_tabela("Laboratório de Informática")
+with t3: exibir_tabela("Sala de Reunião")
 
 st.markdown("---")
-st.caption("🚀 Desenvolvido por **Marcos Candido** - Projeto de Extensão do Curso de Engenharia de Software")
+s_ext = st.selectbox("Salas de Aula:", ["Selecione..."] + salas_de_aula)
+if s_ext != "Selecione...": exibir_tabela(s_ext)
+st.caption("🚀 Desenvolvido por **Marcos Candido** - Projeto de Extensão Engenharia de Software")
