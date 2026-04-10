@@ -126,13 +126,8 @@ if logado:
             dias = st.multiselect("Dias", ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"])
             data_ev = None
 
-        # AJUSTE DE HORÁRIO: Limitado entre 08:00 e 22:00
         h_i = st.time_input("Início", value=time(8, 0), step=1800)
         h_f = st.time_input("Término", value=time(9, 0), step=1800)
-        
-        # Validação simples de horário no front-end
-        if h_i < time(8, 0) or h_i > time(22, 0):
-            st.warning("Horário de funcionamento: 08h às 22h")
         
         st_sel = st.selectbox("Status", ["Confirmado", "Pré-agendado", "Cancelado"])
         
@@ -147,7 +142,7 @@ if logado:
             if st_sel == "Cancelado" and not conf_c:
                 st.error("Confirme o cancelamento.")
             elif h_i < time(8,0) or h_f > time(22,0):
-                st.error("Erro: Agendamentos apenas entre 08:00 e 22:00.")
+                st.error("Erro: Agendamentos permitidos apenas entre 08:00 e 22:00.")
             elif evento and servidor:
                 ori_final = esp_ext if origem_sel == "EXTERNO" else origem_sel
                 datas_lista = []
@@ -165,7 +160,7 @@ if logado:
                     salvar_reserva(sala_sel, d.strftime('%d/%m/%Y'), str(h_i), str(h_f), evento, ori_final, sei_n, st_sel, servidor)
                 st.rerun()
 
-# --- 3. FUNÇÃO DE CALENDÁRIO EM GRADE (SEMANAL) ---
+# --- 3. FUNÇÃO DE CALENDÁRIO EM GRADE (FOCO NA SEMANA) ---
 def calendario_grade_ocupacao(df_sala):
     hoje = datetime.now()
     ano, mes = hoje.year, hoje.month
@@ -173,44 +168,46 @@ def calendario_grade_ocupacao(df_sala):
     
     st.write(f"🔍 **Disponibilidade - {nome_mes}/{ano}**")
     
-    # Mapeia dias ocupados
     dias_ocupados = {}
     if not df_sala.empty:
         for _, row in df_sala.iterrows():
             try:
                 dt = datetime.strptime(row['data'], '%d/%m/%Y')
                 if dt.year == ano and dt.month == mes:
-                    # Prioriza 'Confirmado' na cor do calendário
                     if dias_ocupados.get(dt.day) != 'Confirmado':
                         dias_ocupados[dt.day] = row['status']
             except: continue
 
-    # Configuração da Grade (7 colunas para os dias da semana)
     dias_semana_abrev = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]
     cabecalho = st.columns(7)
     for i, nome_d in enumerate(dias_semana_abrev):
-        cabecalho[i].markdown(f"<p style='text-align:center; font-weight:bold; margin-bottom:0;'>{nome_d}</p>", unsafe_allow_html=True)
+        # Destaca Segunda a Sexta no cabeçalho
+        peso = "bold" if 1 <= i <= 5 else "normal"
+        cor_txt = "#333" if 1 <= i <= 5 else "#999"
+        cabecalho[i].markdown(f"<p style='text-align:center; font-weight:{peso}; color:{cor_txt}; margin-bottom:0;'>{nome_d}</p>", unsafe_allow_html=True)
 
-    # Lógica de preenchimento do calendário
     cal = calendar.monthcalendar(ano, mes)
     for semana in cal:
         cols = st.columns(7)
         for i, dia in enumerate(semana):
             if dia == 0:
-                cols[i].write("") # Espaço vazio para dias fora do mês
+                cols[i].write("")
             else:
                 status_dia = dias_ocupados.get(dia)
-                cor = "#eeeeee" # Cinza (Livre)
-                texto = "#999999"
+                # Cores padrão: Sábado (i=6) e Domingo (i=0) ficam mais claros
+                eh_fds = (i == 0 or i == 6)
+                cor_fundo = "#f9f9f9" if eh_fds else "#eeeeee"
+                cor_texto = "#ccc" if eh_fds else "#666"
+                peso_fonte = "normal" if eh_fds else "bold"
                 
                 if status_dia == 'Confirmado':
-                    cor, texto = "#3D5AFE", "white"
+                    cor_fundo, cor_texto, peso_fonte = "#3D5AFE", "white", "bold"
                 elif status_dia == 'Pré-agendado':
-                    cor, texto = "#FFAB00", "black"
+                    cor_fundo, cor_texto, peso_fonte = "#FFAB00", "black", "bold"
                 
                 cols[i].markdown(f"""
-                    <div style='text-align:center; background-color:{cor}; color:{texto}; 
-                    border-radius:4px; padding:5px; margin:2px; font-size:14px; font-weight:bold;'>
+                    <div style='text-align:center; background-color:{cor_fundo}; color:{cor_texto}; 
+                    border-radius:4px; padding:5px; margin:2px; font-size:14px; font-weight:{peso_fonte};'>
                     {dia}
                     </div>
                 """, unsafe_allow_html=True)
@@ -221,7 +218,6 @@ def exibir_tabela(n_sala):
     df = pd.read_sql_query("SELECT * FROM reservas WHERE sala=? ORDER BY data DESC", conn, params=(n_sala,))
     conn.close()
 
-    # Exibe o calendário em grade no topo
     calendario_grade_ocupacao(df)
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -240,13 +236,13 @@ def exibir_tabela(n_sala):
                 df_display.to_excel(wr, index=False)
             st.download_button(f"📥 Excel - {n_sala}", out.getvalue(), f"{n_sala}.xlsx", key=f"d_{n_sala}")
     else:
-        st.info(f"Sem agendamentos para {n_sala}.")
+        st.info(f"Sem agendamentos registrados para {n_sala}.")
 
 st.subheader("🗓️ Cronograma Principal")
-t1, t2, t3 = st.tabs(abas_fixas)
-with t1: exibir_tabela("Auditório Rio Amazonas")
-with t2: exibir_tabela("Laboratório de Informática")
-with t3: exibir_tabela("Sala de Reunião")
+tab_audit, tab_lab, tab_reuniao = st.tabs(abas_fixas)
+with tab_audit: exibir_tabela("Auditório Rio Amazonas")
+with tab_lab: exibir_tabela("Laboratório de Informática")
+with tab_reuniao: exibir_tabela("Sala de Reunião")
 
 st.markdown("---")
 s_ext = st.selectbox("Salas de Aula:", ["Selecione..."] + salas_de_aula)
