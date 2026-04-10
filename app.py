@@ -88,9 +88,24 @@ if logado:
                 if not df_s.empty: df_s.to_excel(writer, sheet_name=s[:31], index=False)
         st.sidebar.download_button("📥 Backup Geral (Excel)", output_geral.getvalue(), f"Backup_{datetime.now().strftime('%d_%m')}.xlsx")
 
+    with st.sidebar.expander("🗑️ Remover Registros"):
+        sala_l = st.selectbox("Sala", todas_as_salas, key="l_s_sidebar")
+        conn = sqlite3.connect('agendamentos_direcao.db')
+        df_l = pd.read_sql_query("SELECT id, data, evento FROM reservas WHERE sala=?", conn, params=(sala_l,))
+        conn.close()
+        if not df_l.empty:
+            opc = {f"ID {row['id']} | {row['data']}": row['id'] for _, row in df_l.iterrows()}
+            it = st.selectbox("Item", list(opc.keys()))
+            if st.button("EXCLUIR"):
+                conn = sqlite3.connect('agendamentos_direcao.db')
+                conn.execute("DELETE FROM reservas WHERE id=?", (opc[it],))
+                conn.commit()
+                conn.close()
+                st.rerun()
+
     st.sidebar.markdown("---")
     st.sidebar.subheader("📝 Novo Agendamento")
-    sala_sel = st.sidebar.selectbox("Espaço", todas_as_salas)
+    sala_sel_side = st.sidebar.selectbox("Espaço", todas_as_salas, key="sala_sel_side")
     tipo_ag = st.sidebar.radio("Tipo", ["Pontual", "Por Período"])
     origem_sel = st.sidebar.selectbox("Solicitante", ["DA-FES", "DECON-FES", "DEA-FES", "DIRETORIA", "EXTERNO"])
     esp_ext = st.sidebar.text_input("Especificar Externo") if origem_sel == "EXTERNO" else ""
@@ -111,34 +126,36 @@ if logado:
         servidor = st.text_input("Servidor Lançador")
         
         if st.form_submit_button("Confirmar"):
-            ori_final = esp_ext if origem_sel == "EXTERNO" else origem_sel
-            datas = [data_ev] if tipo_ag == "Pontual" else []
-            if tipo_ag == "Por Período":
-                m_d = {"Segunda":0, "Terça":1, "Quarta":2, "Quinta":3, "Sexta":4, "Sábado":5}
-                ind = [m_d[d] for d in dias]
-                curr = d_i
-                while curr <= d_f:
-                    if curr.weekday() in ind: datas.append(curr)
-                    curr += timedelta(days=1)
-            for d in datas:
-                salvar_reserva(sala_sel, d.strftime('%d/%m/%Y'), str(h_i)[:5], str(h_f)[:5], evento, ori_final, sei_n, st_sel, servidor)
-            st.rerun()
+            if evento and servidor:
+                ori_final = esp_ext if origem_sel == "EXTERNO" else origem_sel
+                datas = [data_ev] if tipo_ag == "Pontual" else []
+                if tipo_ag == "Por Período":
+                    m_d = {"Segunda":0, "Terça":1, "Quarta":2, "Quinta":3, "Sexta":4, "Sábado":5}
+                    ind = [m_d[d] for d in dias]
+                    curr = d_i
+                    while curr <= d_f:
+                        if curr.weekday() in ind: datas.append(curr)
+                        curr += timedelta(days=1)
+                for d in datas:
+                    salvar_reserva(sala_sel_side, d.strftime('%d/%m/%Y'), str(h_i)[:5], str(h_f)[:5], evento, ori_final, sei_n, st_sel, servidor)
+                st.rerun()
 
 # --- 3. COMPONENTES VISUAIS ---
-def calendario_compacto(df_sala):
+def calendario_compacto(df_sala, n_sala):
+    # CHAVE ÚNICA PARA OS BOTÕES (Resolve o erro do Streamlit)
     col_v1, col_v2, col_v3 = st.columns([1, 4, 1])
-    if col_v1.button("◀", key=f"p_{df_sala.shape[0]}"):
+    if col_v1.button("◀", key=f"prev_{n_sala}"):
         st.session_state.mes_ref -= 1
         if st.session_state.mes_ref == 0: st.session_state.mes_ref = 12; st.session_state.ano_ref -= 1
         st.rerun()
-    if col_v3.button("▶", key=f"n_{df_sala.shape[1]}"):
+    if col_v3.button("▶", key=f"next_{n_sala}"):
         st.session_state.mes_ref += 1
         if st.session_state.mes_ref == 13: st.session_state.mes_ref = 1; st.session_state.ano_ref += 1
         st.rerun()
     
     mes, ano = st.session_state.mes_ref, st.session_state.ano_ref
     nome_mes = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"][mes-1]
-    col_v2.markdown(f"<p style='text-align:center; font-weight:bold;'>{nome_mes} / {ano}</p>", unsafe_allow_html=True)
+    col_v2.markdown(f"<p style='text-align:center; font-weight:bold; margin:0;'>{nome_mes} / {ano}</p>", unsafe_allow_html=True)
     
     dias_ocupados = {}
     if not df_sala.empty:
@@ -168,7 +185,8 @@ def exibir_tabela(n_sala, mostrar_cal=True):
     conn = sqlite3.connect('agendamentos_direcao.db')
     df = pd.read_sql_query("SELECT * FROM reservas WHERE sala=? ORDER BY data DESC", conn, params=(n_sala,))
     conn.close()
-    if mostrar_cal: calendario_compacto(df)
+    if mostrar_cal: calendario_compacto(df, n_sala)
+    st.write("---")
     if not df.empty:
         df['dt'] = pd.to_datetime(df['data'], format='%d/%m/%Y')
         df_f = df[(df['dt'].dt.month == st.session_state.mes_ref) & (df['dt'].dt.year == st.session_state.ano_ref)]
@@ -177,11 +195,10 @@ def exibir_tabela(n_sala, mostrar_cal=True):
             disp.columns = ['Status', 'Data', 'Início', 'Fim', 'Descrição', 'Origem', 'Lançador']
             st.dataframe(disp.style.map(lambda x: f'background-color: {"#d4edda" if x=="Confirmado" else ("#fff3cd" if x=="Pré-agendado" else "#f8d7da")}', subset=['Status']), use_container_width=True, hide_index=True)
 
-# --- 4. ABA RESUMO SEMESTRAL (SALAS DE AULA) ---
+# --- 4. ABA RESUMO SEMESTRAL ---
 def resumo_semestral():
     st.write("### 🏛️ Mapa de Ocupação Semanal - Salas de Aula")
     conn = sqlite3.connect('agendamentos_direcao.db')
-    # Pegamos tudo que não é cancelado
     df = pd.read_sql_query("SELECT * FROM reservas WHERE status != 'Cancelado' AND sala LIKE 'Sala%'", conn)
     conn.close()
 
@@ -191,35 +208,30 @@ def resumo_semestral():
     for s in salas_de_aula_list:
         linha = {"Sala": s}
         for d_nome in dias_semana:
-            # Lógica para encontrar o que tem nessa sala nesse dia da semana (independente da data real, focando na recorrência)
             m_d = {"Segunda":0, "Terça":1, "Quarta":2, "Quinta":3, "Sexta":4, "Sábado":5}
-            df_sala_dia = df[(df['sala'] == s)]
-            # Filtra por dia da semana
+            df_sala_dia = df[df['sala'] == s].copy()
             df_sala_dia['dw'] = pd.to_datetime(df_sala_dia['data'], format='%d/%m/%Y').dt.weekday
             eventos = df_sala_dia[df_sala_dia['dw'] == m_d[d_nome]]
-            
             if not eventos.empty:
-                # Pega os horários e o departamento (origem)
                 txt = " | ".join([f"{r['horario_inicio']}-{r['horario_fim']} ({r['origem']})" for _, r in eventos.drop_duplicates(subset=['horario_inicio', 'horario_fim', 'origem']).iterrows()])
                 linha[d_nome] = txt
-            else:
-                linha[d_nome] = "-"
+            else: linha[d_nome] = "-"
         resumo_data.append(linha)
 
     df_resumo = pd.DataFrame(resumo_data)
-    
-    # Estilização de cores por departamento
-    def colorir_origem(val):
-        if "DA-FES" in val: return 'background-color: #e3f2fd; color: #0d47a1' # Azul
-        if "DECON" in val: return 'background-color: #f1f8e9; color: #33691e' # Verde
-        if "DEA" in val: return 'background-color: #fff3e0; color: #e65100' # Laranja
+
+    def colorir_celula(val):
+        if "DA-FES" in val: return 'background-color: #e3f2fd; color: #0d47a1'
+        if "DECON" in val: return 'background-color: #f1f8e9; color: #33691e'
+        if "DEA" in val: return 'background-color: #fff3e0; color: #e65100'
+        if "DIRETORIA" in val: return 'background-color: #f3e5f5; color: #4a148c'
         return ''
 
-    st.dataframe(df_resumo.style.applymap(colorir_origem), use_container_width=True, hide_index=True)
+    st.dataframe(df_resumo.style.applymap(colorir_celula), use_container_width=True, hide_index=True)
     
     st.markdown("---")
     st.write("#### 🔍 Detalhes por Sala")
-    s_detalhe = st.selectbox("Selecione uma sala para ver o calendário detalhado:", ["Selecione..."] + salas_de_aula_list)
+    s_detalhe = st.selectbox("Escolha uma sala:", ["Selecione..."] + salas_de_aula_list, key="sel_detalhe_sala")
     if s_detalhe != "Selecione...":
         exibir_tabela(s_detalhe)
 
