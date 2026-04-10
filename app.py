@@ -61,7 +61,6 @@ st.title("📅 Gestão de Espaços - Direção")
 if 'logado' not in st.session_state:
     st.session_state.logado = False
 
-# Sidebar Login
 with st.sidebar.form("login_form"):
     st.header("🔐 Área Restrita")
     u_input = st.text_input("Usuário")
@@ -99,16 +98,13 @@ if logado:
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("📝 Novo Agendamento")
-    
     sala_sel = st.sidebar.selectbox("Espaço", todas_as_salas)
     tipo_ag = st.sidebar.radio("Tipo", ["Pontual", "Por Período"])
-    
     origem_opc = ["DA-FES", "DECON-FES", "DEA-FES", "DIRETORIA", "EXTERNO"]
     origem_sel = st.sidebar.selectbox("Solicitante", origem_opc)
     esp_ext = ""
     if origem_sel == "EXTERNO":
         esp_ext = st.sidebar.text_input("Especificar Externo")
-    
     meio_opc = ["E-mail", "SEI", "Presencial", "Outro"]
     meio_sel = st.sidebar.selectbox("Meio da solicitação", meio_opc)
     sei_n = ""
@@ -125,43 +121,30 @@ if logado:
             d_f = c2.date_input("Fim", format="DD/MM/YYYY")
             dias = st.multiselect("Dias", ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"])
             data_ev = None
-
         h_i = st.time_input("Início", value=time(8, 0), step=1800)
         h_f = st.time_input("Término", value=time(9, 0), step=1800)
-        
         st_sel = st.selectbox("Status", ["Confirmado", "Pré-agendado", "Cancelado"])
-        
-        conf_c = True
-        if st_sel == "Cancelado":
-            conf_c = st.checkbox("Confirmar cancelamento")
-        
+        conf_c = st.checkbox("Confirmar ação") if st_sel == "Cancelado" else True
         evento = st.text_area("Finalidade/Evento")
         servidor = st.text_input("Servidor Lançador")
         
         if st.form_submit_button("Confirmar Agendamento"):
-            if st_sel == "Cancelado" and not conf_c:
-                st.error("Confirme o cancelamento.")
-            elif h_i < time(8,0) or h_f > time(22,0):
-                st.error("Erro: Agendamentos permitidos apenas entre 08:00 e 22:00.")
-            elif evento and servidor:
+            if evento and servidor and conf_c:
                 ori_final = esp_ext if origem_sel == "EXTERNO" else origem_sel
-                datas_lista = []
-                if tipo_ag == "Pontual":
-                    datas_lista = [data_ev]
-                else:
+                datas_lista = [data_ev] if tipo_ag == "Pontual" else []
+                if tipo_ag == "Por Período":
                     m_d = {"Segunda":0, "Terça":1, "Quarta":2, "Quinta":3, "Sexta":4, "Sábado":5}
                     ind = [m_d[d] for d in dias]
                     curr = d_i
                     while curr <= d_f:
                         if curr.weekday() in ind: datas_lista.append(curr)
                         curr += timedelta(days=1)
-                
                 for d in datas_lista:
                     salvar_reserva(sala_sel, d.strftime('%d/%m/%Y'), str(h_i), str(h_f), evento, ori_final, sei_n, st_sel, servidor)
                 st.rerun()
 
-# --- 3. FUNÇÃO DE CALENDÁRIO EM GRADE (FOCO NA SEMANA) ---
-def calendario_grade_ocupacao(df_sala):
+# --- 3. FUNÇÃO DE CALENDÁRIO COMPACTO (RESPONSIVO PARA CELULAR) ---
+def calendario_compacto(df_sala):
     hoje = datetime.now()
     ano, mes = hoje.year, hoje.month
     nome_mes = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"][mes-1]
@@ -178,39 +161,43 @@ def calendario_grade_ocupacao(df_sala):
                         dias_ocupados[dt.day] = row['status']
             except: continue
 
-    dias_semana_abrev = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]
-    cabecalho = st.columns(7)
-    for i, nome_d in enumerate(dias_semana_abrev):
-        # Destaca Segunda a Sexta no cabeçalho
-        peso = "bold" if 1 <= i <= 5 else "normal"
-        cor_txt = "#333" if 1 <= i <= 5 else "#999"
-        cabecalho[i].markdown(f"<p style='text-align:center; font-weight:{peso}; color:{cor_txt}; margin-bottom:0;'>{nome_d}</p>", unsafe_allow_html=True)
-
+    # CSS para forçar a grade no celular
+    html_cal = f"""
+    <style>
+        .cal-table {{ width: 100%; table-layout: fixed; border-collapse: collapse; font-family: sans-serif; }}
+        .cal-th {{ text-align: center; font-size: 10px; color: #888; padding: 5px 0; }}
+        .cal-td {{ border: 1px solid #f0f0f0; height: 35px; text-align: center; vertical-align: middle; position: relative; }}
+        .day-num {{ font-size: 12px; font-weight: bold; }}
+        .status-confirmado {{ background-color: #3D5AFE; color: white; border-radius: 4px; }}
+        .status-preagendado {{ background-color: #FFAB00; color: black; border-radius: 4px; }}
+        .status-fds {{ background-color: #fafafa; color: #ccc; }}
+        .status-normal {{ color: #444; }}
+    </style>
+    <table class='cal-table'>
+        <tr>
+            <th class='cal-th'>D</th><th class='cal-th'>S</th><th class='cal-th'>T</th>
+            <th class='cal-th'>Q</th><th class='cal-th'>Q</th><th class='cal-th'>S</th><th class='cal-th'>S</th>
+        </tr>
+    """
+    
     cal = calendar.monthcalendar(ano, mes)
     for semana in cal:
-        cols = st.columns(7)
+        html_cal += "<tr>"
         for i, dia in enumerate(semana):
             if dia == 0:
-                cols[i].write("")
+                html_cal += "<td class='cal-td'></td>"
             else:
-                status_dia = dias_ocupados.get(dia)
-                # Cores padrão: Sábado (i=6) e Domingo (i=0) ficam mais claros
-                eh_fds = (i == 0 or i == 6)
-                cor_fundo = "#f9f9f9" if eh_fds else "#eeeeee"
-                cor_texto = "#ccc" if eh_fds else "#666"
-                peso_fonte = "normal" if eh_fds else "bold"
+                status = dias_ocupados.get(dia)
+                classe = "status-normal"
+                if status == 'Confirmado': classe = "status-confirmado"
+                elif status == 'Pré-agendado': classe = "status-preagendado"
+                elif i == 0 or i == 6: classe = "status-fds"
                 
-                if status_dia == 'Confirmado':
-                    cor_fundo, cor_texto, peso_fonte = "#3D5AFE", "white", "bold"
-                elif status_dia == 'Pré-agendado':
-                    cor_fundo, cor_texto, peso_fonte = "#FFAB00", "black", "bold"
-                
-                cols[i].markdown(f"""
-                    <div style='text-align:center; background-color:{cor_fundo}; color:{cor_texto}; 
-                    border-radius:4px; padding:5px; margin:2px; font-size:14px; font-weight:{peso_fonte};'>
-                    {dia}
-                    </div>
-                """, unsafe_allow_html=True)
+                html_cal += f"<td class='cal-td {classe}'><span class='day-num'>{dia}</span></td>"
+        html_cal += "</tr>"
+    html_cal += "</table>"
+    
+    st.markdown(html_cal, unsafe_allow_html=True)
 
 # --- 4. VISUALIZAÇÃO ---
 def exibir_tabela(n_sala):
@@ -218,7 +205,7 @@ def exibir_tabela(n_sala):
     df = pd.read_sql_query("SELECT * FROM reservas WHERE sala=? ORDER BY data DESC", conn, params=(n_sala,))
     conn.close()
 
-    calendario_grade_ocupacao(df)
+    calendario_compacto(df) # Chamada do novo calendário
     st.markdown("<br>", unsafe_allow_html=True)
 
     if not df.empty:
@@ -236,7 +223,7 @@ def exibir_tabela(n_sala):
                 df_display.to_excel(wr, index=False)
             st.download_button(f"📥 Excel - {n_sala}", out.getvalue(), f"{n_sala}.xlsx", key=f"d_{n_sala}")
     else:
-        st.info(f"Sem agendamentos registrados para {n_sala}.")
+        st.info(f"Sem agendamentos registrados.")
 
 st.subheader("🗓️ Cronograma Principal")
 tab_audit, tab_lab, tab_reuniao = st.tabs(abas_fixas)
