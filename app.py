@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, time
 import calendar
 import io
 
-# --- 1. CONFIGURAÇÃO E BANCO DE DADOS ---
+# --- 1. CONFIGURAÇÃO E BANCO DE DATOS ---
 def init_db():
     conn = sqlite3.connect('agendamentos_direcao.db')
     c = conn.cursor()
@@ -22,6 +22,35 @@ def init_db():
                   servidor_resp TEXT)''')
     conn.commit()
     conn.close()
+
+def verificar_conflito(sala, data, inicio, fim, id_ignorar=None):
+    """Verifica se existe sobreposição de horários na mesma sala e data."""
+    conn = sqlite3.connect('agendamentos_direcao.db')
+    c = conn.cursor()
+    # Busca agendamentos ativos (não cancelados) para a mesma sala e data
+    query = "SELECT id, horario_inicio, horario_fim FROM reservas WHERE sala=? AND data=? AND status != 'Cancelado'"
+    params = [sala, data]
+    
+    if id_ignorar:
+        query += " AND id != ?"
+        params.append(id_ignorar)
+        
+    c.execute(query, params)
+    agendamentos = c.fetchall()
+    conn.close()
+
+    format_h = '%H:%M'
+    novo_i = datetime.strptime(inicio, format_h).time()
+    novo_f = datetime.strptime(fim, format_h).time()
+
+    for ag_id, ex_i_str, ex_f_str in agendamentos:
+        ex_i = datetime.strptime(ex_i_str, format_h).time()
+        ex_f = datetime.strptime(ex_f_str, format_h).time()
+
+        # Lógica de intersecção: (Início A < Fim B) E (Fim A > Início B)
+        if novo_i < ex_f and novo_f > ex_i:
+            return True # Conflito detectado
+    return False # Caminho livre
 
 def atualizar_reserva(id_reserva, evento, origem, sei, status, servidor, h_i, h_f, data):
     conn = sqlite3.connect('agendamentos_direcao.db')
@@ -47,14 +76,11 @@ init_db()
 
 st.title("📅 Gestão de Espaços - Direção")
 
-# Estados para o calendário mensal
 if 'mes_ref' not in st.session_state: st.session_state.mes_ref = datetime.now().month
 if 'ano_ref' not in st.session_state: st.session_state.ano_ref = datetime.now().year
 
-# ESTADO PARA O MAPA SEMANAL (Navegação)
 if 'data_mapa_ref' not in st.session_state:
     hoje = datetime.now().date()
-    # Ajusta para a segunda-feira da semana atual
     st.session_state.data_mapa_ref = hoje - timedelta(days=hoje.weekday())
 
 if 'logado' not in st.session_state: st.session_state.logado = False
@@ -125,9 +151,21 @@ if logado:
                 while curr <= d_f:
                     if curr.weekday() in ind: datas.append(curr)
                     curr += timedelta(days=1)
+            
+            conflitos = []
             for d in datas:
-                salvar_reserva(sala_sel_side, d.strftime('%d/%m/%Y'), str(h_i)[:5], str(h_f)[:5], evento, ori_f, sei_n, st_sel, servidor)
-            st.rerun()
+                d_str = d.strftime('%d/%m/%Y')
+                # Bloqueio de duplicidade
+                if verificar_conflito(sala_sel_side, d_str, str(h_i)[:5], str(h_f)[:5]):
+                    conflitos.append(d_str)
+                else:
+                    salvar_reserva(sala_sel_side, d_str, str(h_i)[:5], str(h_f)[:5], evento, ori_f, sei_n, st_sel, servidor)
+            
+            if conflitos:
+                st.error(f"Erro: Conflito de horário nas datas: {', '.join(conflitos)}. Estes dias não foram salvos.")
+            else:
+                st.success("Agendamento(s) realizado(s) com sucesso!")
+                st.rerun()
 
 # --- 3. COMPONENTES VISUAIS ---
 def calendario_compacto(df_sala, n_sala):
@@ -203,10 +241,19 @@ def exibir_tabela(n_sala, mostrar_cal=True):
                     new_ev = c1.text_input("Finalidade", value=row_edit['evento'], key=f"ev_{id_edit}")
                     new_st = c2.selectbox("Status", ["Confirmado", "Pré-agendado", "Cancelado"], 
                                              index=["Confirmado", "Pré-agendado", "Cancelado"].index(row_edit['status']), key=f"st_{id_edit}")
+                    
+                    # Edição de horário também precisa de trava
+                    h_i_edit = st.time_input("Novo Início", value=datetime.strptime(row_edit['horario_inicio'], '%H:%M').time(), key=f"hi_{id_edit}")
+                    h_f_edit = st.time_input("Novo Término", value=datetime.strptime(row_edit['horario_fim'], '%H:%M').time(), key=f"hf_{id_edit}")
+
                     if st.button("Salvar Alterações", key=f"btn_edit_{id_edit}", use_container_width=True):
-                        atualizar_reserva(id_edit, new_ev, row_edit['origem'], row_edit['numero_sei'], new_st, row_edit['servidor_resp'], 
-                                          row_edit['horario_inicio'], row_edit['horario_fim'], row_edit['data'])
-                        st.rerun()
+                        if verificar_conflito(row_edit['sala'], row_edit['data'], str(h_i_edit)[:5], str(h_f_edit)[:5], id_ignorar=id_edit):
+                            st.error("Conflito: Já existe um evento neste horário para esta sala.")
+                        else:
+                            atualizar_reserva(id_edit, new_ev, row_edit['origem'], row_edit['numero_sei'], new_st, row_edit['servidor_resp'], 
+                                              str(h_i_edit)[:5], str(h_f_edit)[:5], row_edit['data'])
+                            st.rerun()
+
                 with st.popover("🗑️ Excluir"):
                     confirmar = st.checkbox("Confirmar exclusão definitiva", key=f"check_del_{id_edit}")
                     if st.button("CONFIRMAR", key=f"btn_del_{id_edit}", disabled=not confirmar, type="primary"):
@@ -215,7 +262,6 @@ def exibir_tabela(n_sala, mostrar_cal=True):
 
 # --- 4. ABA RESUMO (MAPA DE OCUPAÇÃO SEMANAL NAVEGÁVEL) ---
 def resumo_semanal_navegavel():
-    # --- CONTROLES DE NAVEGAÇÃO ---
     c1, c2, c3 = st.columns([1, 3, 1])
     with c1:
         if st.button("◀ Semana Anterior", use_container_width=True):
@@ -226,7 +272,6 @@ def resumo_semanal_navegavel():
             st.session_state.data_mapa_ref += timedelta(days=7)
             st.rerun()
             
-    # Datas da semana selecionada
     segunda = st.session_state.data_mapa_ref
     sabado = segunda + timedelta(days=5)
     
@@ -238,13 +283,10 @@ def resumo_semanal_navegavel():
         """, unsafe_allow_html=True)
 
     st.write("")
-
-    # --- BUSCA E FILTRO DE DADOS ---
     conn = sqlite3.connect('agendamentos_direcao.db')
     df = pd.read_sql_query("SELECT * FROM reservas WHERE status != 'Cancelado' AND sala LIKE 'Sala%'", conn)
     conn.close()
 
-    # CSS para os Cartões
     st.markdown("""
         <style>
         .resumo-container { display: flex; flex-direction: column; gap: 12px; width: 100%; }
@@ -259,7 +301,6 @@ def resumo_semanal_navegavel():
             word-wrap: break-word; font-weight: 600; box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
         }
         .vazio { color: #333; font-size: 14px; text-align: center; }
-        
         @media (max-width: 768px) {
             .resumo-row { grid-template-columns: 1fr; }
             .resumo-dias { grid-template-columns: 1fr 1fr; } 
@@ -278,22 +319,16 @@ def resumo_semanal_navegavel():
         return "#4b5563"
 
     html = "<div class='resumo-container'>"
-    
-    # Geramos a lista de datas da semana atual para o filtro
     datas_semana = [(segunda + timedelta(days=i)).strftime('%d/%m/%Y') for i in range(6)]
 
     for s in salas_de_aula_list:
         df_sala = df[df['sala'] == s].copy()
-        
         html += f"<div class='resumo-row'><div class='resumo-sala'>{s}</div>"
         html += "<div class='resumo-dias'>"
-        
         for idx, d_nome in enumerate(dias_semana_nomes):
             data_alvo = datas_semana[idx]
             html += f"<div class='dia-col'><div class='dia-header'>{d_nome} ({data_alvo[:5]})</div><div class='card-container'>"
-            
             if not df_sala.empty:
-                # Filtra exatamente pela data daquela coluna na semana selecionada
                 eventos = df_sala[df_sala['data'] == data_alvo].sort_values(by="horario_inicio")
                 if not eventos.empty:
                     for _, r in eventos.drop_duplicates(subset=['horario_inicio', 'horario_fim', 'origem']).iterrows():
@@ -301,10 +336,8 @@ def resumo_semanal_navegavel():
                         html += f"<div class='event-card' style='background-color:{cor};'>{r['horario_inicio']}-{r['horario_fim']}<br>{r['origem']}</div>"
                 else: html += "<div class='vazio'>-</div>"
             else: html += "<div class='vazio'>-</div>"
-            
             html += "</div></div>"
         html += "</div></div>"
-        
     html += "</div>"
     st.markdown(html, unsafe_allow_html=True)
     
