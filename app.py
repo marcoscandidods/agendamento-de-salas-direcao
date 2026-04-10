@@ -124,26 +124,19 @@ if logado:
 # --- 3. COMPONENTES VISUAIS ---
 def calendario_compacto(df_sala, n_sala):
     col_v1, col_v2, col_v3 = st.columns([1, 8, 1])
-    
     with col_v1:
         if st.button("◀", key=f"p_{n_sala}", use_container_width=True):
             st.session_state.mes_ref -= 1
-            if st.session_state.mes_ref == 0: 
-                st.session_state.mes_ref = 12
-                st.session_state.ano_ref -= 1
+            if st.session_state.mes_ref == 0: st.session_state.mes_ref = 12; st.session_state.ano_ref -= 1
             st.rerun()
-            
     with col_v2:
         mes, ano = st.session_state.mes_ref, st.session_state.ano_ref
         nome_mes = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"][mes-1]
         st.markdown(f"<p style='text-align:center; font-weight:bold; font-size:18px; margin:0;'>{nome_mes} / {ano}</p>", unsafe_allow_html=True)
-            
     with col_v3:
         if st.button("▶", key=f"n_{n_sala}", use_container_width=True):
             st.session_state.mes_ref += 1
-            if st.session_state.mes_ref == 13: 
-                st.session_state.mes_ref = 1
-                st.session_state.ano_ref += 1
+            if st.session_state.mes_ref == 13: st.session_state.mes_ref = 1; st.session_state.ano_ref += 1
             st.rerun()
     
     dias_ocupados = {}
@@ -157,20 +150,18 @@ def calendario_compacto(df_sala, n_sala):
 
     html_cal = """
     <style>
-        .cal-table { width:100%; text-align:center; border-collapse: collapse; table-layout: fixed; }
+        .cal-table { width:100%; text-align:center; border-collapse: collapse; table-layout: fixed; margin-top:10px;}
         .cal-table th { font-size:12px; color:gray; padding: 5px; }
-        .cal-table td { border: 1px solid #444 !important; height: 40px; font-size: 14px; font-weight: bold; vertical-align: middle; }
+        .cal-table td { border: 1px solid #444 !important; height: 35px; font-size: 13px; font-weight: bold; vertical-align: middle; }
     </style>
     """
     html_cal += "<table class='cal-table'><tr>"
     for d in ['D','S','T','Q','Q','S','S']: html_cal += f"<th>{d}</th>"
     html_cal += "</tr>"
-    
     for semana in calendar.monthcalendar(ano, mes):
         html_cal += "<tr>"
         for i, dia in enumerate(semana):
-            if dia == 0: 
-                html_cal += "<td style='border: 1px solid #333 !important;'></td>"
+            if dia == 0: html_cal += "<td style='border: 1px solid #333 !important;'></td>"
             else:
                 status = dias_ocupados.get(dia)
                 if status == 'Confirmado': bg, color = "#2563EB", "white"
@@ -196,10 +187,9 @@ def exibir_tabela(n_sala, mostrar_cal=True):
             disp.columns = ['ID', 'Status', 'Data', 'Início', 'Fim', 'Descrição', 'Origem', 'Lançador']
             st.dataframe(disp.style.map(lambda x: f'background-color: {"#16a34a" if x=="Confirmado" else ("#ca8a04" if x=="Pré-agendado" else "#dc2626")}; color: white; font-weight: bold', subset=['Status']), 
                          use_container_width=True, hide_index=True)
-            
             if logado:
                 with st.expander("✏️ Editar Agendamento"):
-                    id_edit = st.selectbox("Selecione o ID para editar", disp['ID'], key=f"sel_{n_sala}")
+                    id_edit = st.selectbox("ID", disp['ID'], key=f"sel_{n_sala}")
                     row_edit = df[df['id'] == id_edit].iloc[0]
                     c1, c2 = st.columns(2)
                     new_ev = c1.text_input("Finalidade", value=row_edit['evento'], key=f"ev_{id_edit}")
@@ -209,56 +199,85 @@ def exibir_tabela(n_sala, mostrar_cal=True):
                         atualizar_reserva(id_edit, new_ev, row_edit['origem'], row_edit['numero_sei'], new_st, row_edit['servidor_resp'], 
                                           row_edit['horario_inicio'], row_edit['horario_fim'], row_edit['data'])
                         st.rerun()
-
-                with st.popover("🗑️ Opções de Exclusão"):
-                    st.error("⚠️ ZONA DE PERIGO")
-                    confirmar = st.checkbox("Confirmo que desejo excluir este registro definitivamente.", key=f"check_del_{id_edit}")
-                    if st.button("EXCLUIR AGENDAMENTO", key=f"btn_del_{id_edit}", disabled=not confirmar, type="primary", use_container_width=True):
-                        conn = sqlite3.connect('agendamentos_direcao.db')
-                        conn.execute("DELETE FROM reservas WHERE id=?", (id_edit,))
-                        conn.commit(); conn.close()
+                with st.popover("🗑️ Excluir"):
+                    confirmar = st.checkbox("Confirmar exclusão definitiva", key=f"check_del_{id_edit}")
+                    if st.button("CONFIRMAR", key=f"btn_del_{id_edit}", disabled=not confirmar, type="primary"):
+                        conn = sqlite3.connect('agendamentos_direcao.db'); conn.execute("DELETE FROM reservas WHERE id=?", (id_edit,)); conn.commit(); conn.close()
                         st.rerun()
 
-# --- 4. ABA RESUMO SEMESTRAL ---
+# --- 4. ABA RESUMO SEMESTRAL (SISTEMA DE CARDS) ---
 def resumo_semestral():
-    st.write("### 🏛️ Mapa de Ocupação Semanal - Salas de Aula")
+    st.subheader("🏛️ Mapa de Ocupação Semanal")
     conn = sqlite3.connect('agendamentos_direcao.db')
     df = pd.read_sql_query("SELECT * FROM reservas WHERE status != 'Cancelado' AND sala LIKE 'Sala%'", conn)
     conn.close()
 
+    # CSS para os Cartões
+    st.markdown("""
+        <style>
+        .resumo-container { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+        .resumo-row { display: grid; grid-template-columns: 100px 1fr; border-bottom: 1px solid #333; padding: 10px 0; align-items: start; }
+        .resumo-sala { font-weight: bold; color: #fff; font-size: 16px; background: #333; padding: 5px; border-radius: 4px; text-align: center; }
+        .resumo-dias { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+        .dia-col { min-width: 0; }
+        .dia-label { font-size: 11px; color: #888; text-transform: uppercase; margin-bottom: 4px; text-align: center; border-bottom: 1px solid #222;}
+        .card-container { display: flex; flex-direction: column; gap: 4px; }
+        .event-card { 
+            font-size: 11px; padding: 4px 6px; border-radius: 4px; color: white; line-height: 1.2;
+            word-wrap: break-word; font-weight: 500; box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+        }
+        .vazio { color: #444; font-size: 12px; text-align: center; }
+        
+        /* Ajuste Mobile */
+        @media (max-width: 768px) {
+            .resumo-row { grid-template-columns: 1fr; }
+            .resumo-dias { grid-template-columns: 1fr 1fr; } /* No celular mostra 2 colunas de dias por vez */
+            .resumo-sala { width: 100%; margin-bottom: 10px; background: #2563EB; }
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     dias_semana = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"]
-    resumo_data = []
+    m_d = {"Segunda":0, "Terça":1, "Quarta":2, "Quinta":3, "Sexta":4, "Sábado":5}
+
+    def get_color(origem):
+        if "DA-FES" in origem: return "#1e40af"
+        if "DECON" in origem: return "#166534"
+        if "DEA" in origem: return "#9a3412"
+        if "DIRETORIA" in origem: return "#6b21a8"
+        return "#4b5563" # Externo/Outro
+
+    html = "<div class='resumo-container'>"
+    
     for s in salas_de_aula_list:
-        linha = {"Sala": s}
+        df_sala = df[df['sala'] == s].copy()
+        if not df_sala.empty:
+            df_sala['dw'] = pd.to_datetime(df_sala['data'], format='%d/%m/%Y').dt.weekday
+            
+        html += f"<div class='resumo-row'><div class='resumo-sala'>{s}</div>"
+        html += "<div class='resumo-dias'>"
+        
         for d_nome in dias_semana:
-            m_d = {"Segunda":0, "Terça":1, "Quarta":2, "Quinta":3, "Sexta":4, "Sábado":5}
-            df_sala_dia = df[df['sala'] == s].copy()
-            if not df_sala_dia.empty:
-                df_sala_dia['dw'] = pd.to_datetime(df_sala_dia['data'], format='%d/%m/%Y').dt.weekday
-                eventos = df_sala_dia[df_sala_dia['dw'] == m_d[d_nome]]
+            html += f"<div class='dia-col'><div class='dia-label'>{d_nome[:3]}</div><div class='card-container'>"
+            
+            if not df_sala.empty:
+                eventos = df_sala[df_sala['dw'] == m_d[d_nome]].sort_values(by="horario_inicio")
                 if not eventos.empty:
-                    # AJUSTE AQUI: Trocado " | " por "<br>" para quebrar linha no HTML
-                    txt = "<br>".join([f"{r['horario_inicio']}-{r['horario_fim']} ({r['origem']})" for _, r in eventos.drop_duplicates(subset=['horario_inicio', 'horario_fim', 'origem']).iterrows()])
-                    linha[d_nome] = txt
-                else: linha[d_nome] = "-"
-            else: linha[d_nome] = "-"
-        resumo_data.append(linha)
-
-    df_resumo = pd.DataFrame(resumo_data)
-
-    def colorir_celula(val):
-        if "DA-FES" in val: return 'background-color: #1e40af; color: white; font-weight: bold'
-        if "DECON" in val: return 'background-color: #166534; color: white; font-weight: bold'
-        if "DEA" in val: return 'background-color: #9a3412; color: white; font-weight: bold'
-        if "DIRETORIA" in val: return 'background-color: #6b21a8; color: white; font-weight: bold'
-        return 'color: #9ca3af'
-
-    # AJUSTE AQUI: st.write(df.to_html) permite renderizar o <br> como quebra de linha real
-    st.write(df_resumo.style.map(colorir_celula).to_html(escape=False, index=False), unsafe_allow_html=True)
+                    for _, r in eventos.drop_duplicates(subset=['horario_inicio', 'horario_fim', 'origem']).iterrows():
+                        cor = get_color(r['origem'])
+                        html += f"<div class='event-card' style='background-color:{cor};'>{r['horario_inicio']}-{r['horario_fim']}<br>{r['origem']}</div>"
+                else: html += "<div class='vazio'>-</div>"
+            else: html += "<div class='vazio'>-</div>"
+            
+            html += "</div></div>" # fecha card-container e dia-col
+            
+        html += "</div></div>" # fecha resumo-dias e resumo-row
+        
+    html += "</div>"
+    st.markdown(html, unsafe_allow_html=True)
     
     st.markdown("---")
-    st.write("#### 🔍 Detalhes por Sala")
-    s_det = st.selectbox("Escolha uma sala:", ["Selecione..."] + salas_de_aula_list, key="sel_aula")
+    s_det = st.selectbox("🔍 Detalhes por Sala:", ["Selecione..."] + salas_de_aula_list)
     if s_det != "Selecione...": exibir_tabela(s_det)
 
 # --- EXECUÇÃO ---
@@ -268,10 +287,5 @@ with t2: exibir_tabela("Laboratório de Informática")
 with t3: exibir_tabela("Sala de Reunião")
 with t4: resumo_semestral()
 
-# --- RODAPÉ CENTRALIZADO ---
-st.markdown("<br><br><br><br>", unsafe_allow_html=True)
-st.markdown("""
-    <div style='text-align: center; color: #6b7280; font-size: 14px;'>
-        🚀 Desenvolvido por <b>Marcos Candido</b> - Projeto de Extensão do Curso de Engenharia de Software
-    </div>
-    """, unsafe_allow_html=True)
+# --- RODAPÉ ---
+st.markdown("<br><br><p style='text-align: center; color: #6b7280; font-size: 14px;'>🚀 Desenvolvido por <b>Marcos Candido</b> - Projeto de Extensão</p>", unsafe_allow_html=True)
