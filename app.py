@@ -7,22 +7,22 @@ import calendar
 import io
 
 # ==========================================
-# 1. MODEL & CONTROLLER (O "Cérebro" do App)
+# 1. MODEL & CONTROLLER (Lógica e Estabilidade)
 # ==========================================
 
 @st.cache_resource
 def init_connection_pool():
-    """Resolve a instabilidade: mantém conexões prontas (Connection Pool)."""
+    """Resolve a instabilidade e lentidão mantendo conexões vivas."""
     try:
         return psycopg2.pool.SimpleConnectionPool(1, 15, st.secrets["DB_URL"])
     except Exception as e:
-        st.error(f"Erro de conexão: {e}")
+        st.error(f"Erro ao conectar ao banco: {e}")
         return None
 
 db_pool = init_connection_pool()
 
 def execute_query(query, params=None, fetch=False, commit=False):
-    """Função mestre para operações seguras no PostgreSQL."""
+    """Executa SQL de forma segura usando o Pool de conexões."""
     conn = db_pool.getconn()
     try:
         with conn.cursor() as cursor:
@@ -30,7 +30,7 @@ def execute_query(query, params=None, fetch=False, commit=False):
             if commit: conn.commit()
             if fetch: return cursor.fetchall()
     except Exception as e:
-        st.error(f"Erro no banco: {e}")
+        st.error(f"Erro na base de dados: {e}")
     finally:
         db_pool.putconn(conn)
 
@@ -61,7 +61,7 @@ def verificar_conflito(sala, data, inicio, fim, id_ignorar=None):
     return False 
 
 # ==========================================
-# 2. VIEW - CONFIGURAÇÕES E ESTILO
+# 2. VIEW - CONFIGURAÇÕES DE INTERFACE
 # ==========================================
 
 st.set_page_config(page_title="Gestão de Espaços - Direção", layout="wide")
@@ -74,13 +74,12 @@ if 'data_mapa_ref' not in st.session_state:
     st.session_state.data_mapa_ref = hoje - timedelta(days=hoje.weekday())
 if 'logado' not in st.session_state: st.session_state.logado = False
 
-# --- LISTAS DE REFERÊNCIA ---
 abas_fixas = ["Auditório Rio Amazonas", "Laboratório de Informática", "Sala de Reunião", "Salas de Aula"]
 salas_de_aula_list = ["Sala 1", "Sala 2", "Sala 4"] + [f"Sala {i}" for i in range(34, 62)]
 todas_as_salas = abas_fixas[:3] + salas_de_aula_list
 lista_h = [(datetime.strptime("07:00", "%H:%M") + timedelta(minutes=30*i)).strftime("%H:%M") for i in range(33)]
 
-# --- ÁREA DE LOGIN ---
+# --- LOGIN ---
 with st.sidebar.form("login_form"):
     st.header("🔐 Área Restrita")
     u_input = st.text_input("Usuário")
@@ -91,22 +90,20 @@ with st.sidebar.form("login_form"):
                 st.session_state.logado = True
                 st.rerun()
             else: st.error("Dados inválidos.")
-        else: st.error("Erro: Verifique os Secrets.")
-
-logado = st.session_state.logado
+        else: st.error("Erro: Configure as credenciais nos Secrets do Streamlit.")
 
 # ==========================================
-# 3. INTERFACE LOGADA (FUNCIONALIDADES)
+# 3. FUNCIONALIDADES DO SISTEMA (LOGADO)
 # ==========================================
 
-if logado:
+if st.session_state.logado:
     st.sidebar.success("Sessão Ativa")
     st.sidebar.warning("⚠️ **AVISO LGPD**: Dados sensíveis não devem constar aqui.")
     if st.sidebar.button("Sair"):
         st.session_state.logado = False
         st.rerun()
     
-    # --- DOWNLOAD BACKUP ---
+    # --- BACKUP EXCEL ---
     st.sidebar.markdown("---")
     res_total = execute_query("SELECT * FROM reservas", fetch=True)
     if res_total:
@@ -121,7 +118,7 @@ if logado:
     # --- FORMULÁRIO NOVO AGENDAMENTO ---
     st.sidebar.markdown("---")
     st.sidebar.subheader("📝 Novo Agendamento")
-    sala_side = st.sidebar.selectbox("Espaço", todas_as_salas)
+    sala_sel_side = st.sidebar.selectbox("Espaço", todas_as_salas)
     tipo_ag = st.sidebar.radio("Tipo", ["Pontual", "Por Período"])
     
     with st.sidebar.form("form_novo"):
@@ -133,8 +130,7 @@ if logado:
             d_i = st.date_input("Início", format="DD/MM/YYYY")
             d_f = st.date_input("Fim", format="DD/MM/YYYY")
             dias_w = st.multiselect("Dias", ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"])
-            datas_alvo = []
-            m_d = {"Segunda":0, "Terça":1, "Quarta":2, "Quinta":3, "Sexta":4, "Sábado":5}
+            datas_alvo, m_d = [], {"Segunda":0, "Terça":1, "Quarta":2, "Quinta":3, "Sexta":4, "Sábado":5}
             curr = d_i
             while curr <= d_f:
                 if any(curr.weekday() == m_d[d] for d in dias_w): datas_alvo.append(curr)
@@ -151,10 +147,10 @@ if logado:
             conflitos = []
             for d in datas_alvo:
                 d_s = d.strftime('%d/%m/%Y')
-                if verificar_conflito(sala_side, d_s, h_i, h_f): conflitos.append(d_s)
+                if verificar_conflito(sala_sel_side, d_s, h_i, h_f): conflitos.append(d_s)
                 else:
                     execute_query("INSERT INTO reservas (sala, data, horario_inicio, horario_fim, evento, origem, numero_sei, status, servidor_resp) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)", 
-                                 (sala_side, d_s, h_i, h_f, evento, ori_f, sei_n, st_sel, servidor), commit=True)
+                                 (sala_sel_side, d_s, h_i, h_f, evento, ori_f, sei_n, st_sel, servidor), commit=True)
             if conflitos: st.error(f"Conflitos: {', '.join(conflitos)}")
             else: st.success("Salvo!"); st.rerun()
 
@@ -188,15 +184,15 @@ def calendario_compacto(df_sala, n_sala):
             except: continue
 
     html = "<style>.cal-table { width:100%; text-align:center; border-collapse: collapse; }.cal-table td { border: 1px solid #444; height: 35px; font-weight: bold; }</style><table class='cal-table'><tr>"
-    for d in ['D','S','T','Q','Q','S','S']: html += f"<th style='color:gray;'>{d}</th>"
+    for d in ['D','S','T','Q','Q','S','S']: html += f"<th style='color:gray; font-size:12px;'>{d}</th>"
     html += "</tr>"
     for sem in calendar.monthcalendar(st.session_state.ano_ref, st.session_state.mes_ref):
         html += "<tr>"
         for i, dia in enumerate(sem):
             if dia == 0: html += "<td></td>"
             else:
-                stt = dias_ocup.get(dia)
-                bg = "#2563EB" if stt == 'Confirmado' else ("#D97706" if stt == 'Pré-agendado' else ("#1e1e1e" if i in [0,6] else "transparent"))
+                s_st = dias_ocup.get(dia)
+                bg = "#2563EB" if s_st == 'Confirmado' else ("#D97706" if s_st == 'Pré-agendado' else ("#1e1e1e" if i in [0,6] else "transparent"))
                 html += f"<td style='background-color:{bg}; color:white;'>{dia}</td>"
         html += "</tr>"
     st.markdown(html + "</table>", unsafe_allow_html=True)
@@ -213,13 +209,13 @@ def exibir_tabela(n_sala):
             disp = df_f[['id', 'status', 'data', 'horario_inicio', 'horario_fim', 'evento', 'origem', 'servidor_resp']].copy()
             disp.columns = ['ID', 'Status', 'Data', 'Início', 'Fim', 'Descrição', 'Origem', 'Lançador']
             st.dataframe(disp.style.map(lambda x: f'background-color: {"#16a34a" if x=="Confirmado" else ("#ca8a04" if x=="Pré-agendado" else "#dc2626")}; color: white; font-weight: bold', subset=['Status']), use_container_width=True, hide_index=True)
-            if logado:
+            if st.session_state.logado:
                 with st.expander("✏️ Editar/Excluir"):
                     id_ed = st.selectbox("ID", disp['ID'], key=f"ed_{n_sala}")
                     r_ed = df[df['id'] == id_ed].iloc[0]
                     c1, c2 = st.columns(2)
-                    new_ev = c1.text_input("Finalidade", value=r_ed['evento'], key=f"ev_{id_ed}")
-                    new_st = c2.selectbox("Status", ["Confirmado", "Pré-agendado", "Cancelado"], index=["Confirmado", "Pré-agendado", "Cancelado"].index(r_ed['status']), key=f"st_{id_ed}")
+                    new_ev = c1.text_input("Finalidade", value=r_ed['evento'], key=f"v_{id_ed}")
+                    new_st = c2.selectbox("Status", ["Confirmado", "Pré-agendado", "Cancelado"], index=["Confirmado", "Pré-agendado", "Cancelado"].index(r_ed['status']), key=f"s_{id_ed}")
                     new_hi = st.selectbox("Início", lista_h, index=lista_h.index(r_ed['horario_inicio']), key=f"hi_{id_ed}")
                     new_hf = st.selectbox("Fim", lista_h, index=lista_h.index(r_ed['horario_fim']), key=f"hf_{id_ed}")
                     if st.button("Salvar Alterações", key=f"btn_{id_ed}"):
@@ -255,7 +251,7 @@ def resumo_semanal_navegavel():
 
     for s in salas_de_aula_list:
         cols = st.columns([1.5, 2, 2, 2, 2, 2, 2])
-        cols[0].markdown(f"<div class='resumo-sala'>{s}</div>", unsafe_allow_html=True)
+        cols[0].markdown(f"<div style='font-weight:bold; font-size:12px; background:#262730; padding:5px; border-radius:5px;'>{s}</div>", unsafe_allow_html=True)
         for i, d_s in enumerate(datas_s):
             with cols[i+1]:
                 st.caption(f"{dias_n[i][:3]} {d_s[:5]}")
@@ -263,14 +259,13 @@ def resumo_semanal_navegavel():
                     evs = df[(df['sala'] == s) & (df['data'] == d_s)]
                     for _, r in evs.iterrows():
                         cor = "#1e40af" if "DA-FES" in r['origem'] else "#4b5563"
-                        st.markdown(f"<div class='event-card' style='background:{cor}'>{r['horario_inicio']}<br>{r['origem']}</div>", unsafe_allow_html=True)
-
+                        st.markdown(f"<div style='font-size:9px; padding:3px; border-radius:4px; color:white; background:{cor}; margin-bottom:2px;'>{r['horario_inicio']}<br>{r['origem']}</div>", unsafe_allow_html=True)
     st.markdown("---")
     s_det = st.selectbox("Consultar Sala específica:", ["Selecione..."] + salas_de_aula_list)
     if s_det != "Selecione...": exibir_tabela(s_det)
 
 # ==========================================
-# 6. EXECUÇÃO E RODAPÉ
+# 6. EXECUÇÃO E RODAPÉ (SEUS TEXTOS)
 # ==========================================
 
 t1, t2, t3, t4 = st.tabs(abas_fixas)
@@ -279,6 +274,7 @@ with t2: exibir_tabela("Laboratório de Informática")
 with t3: exibir_tabela("Sala de Reunião")
 with t4: resumo_semanal_navegavel()
 
+# ISENÇÃO (MANTIDO 100%)
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #6b7280; font-size: 13px; line-height: 1.6;'>
