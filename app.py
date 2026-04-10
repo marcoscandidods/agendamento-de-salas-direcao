@@ -58,14 +58,25 @@ init_db()
 
 st.title("📅 Gestão de Espaços - Direção")
 
-# Configuração de Acesso na Sidebar
-st.sidebar.header("🔐 Área Restrita")
-usuario = st.sidebar.text_input("Usuário", key="user_input")
-senha = st.sidebar.text_input("Senha", type="password", key="pass_input")
+# --- SISTEMA DE LOGIN COM BOTÃO ---
+if 'logado' not in st.session_state:
+    st.session_state.logado = False
 
-USER_CORRETO = "diretoriafes"
-SENHA_CORRETA = "secretariafes2021/2"
-logado = (usuario == USER_CORRETO and senha == SENHA_CORRETA)
+with st.sidebar.form("login_form"):
+    st.header("🔐 Área Restrita")
+    usuario_input = st.text_input("Usuário")
+    senha_input = st.text_input("Senha", type="password")
+    btn_login = st.form_submit_button("Acessar Sistema")
+
+    if btn_login:
+        if usuario_input == "diretoriafes" and senha_input == "secretariafes2021/2":
+            st.session_state.logado = True
+            st.success("Acesso autorizado!")
+            st.rerun()
+        else:
+            st.error("Usuário ou senha inválidos.")
+
+logado = st.session_state.logado
 
 # Definição das Salas
 abas_fixas = ["Auditório Rio Amazonas", "Laboratório de Informática", "Sala de Reunião"]
@@ -73,7 +84,10 @@ salas_de_aula = ["Sala 1", "Sala 2", "Sala 4"] + [f"Sala {i}" for i in range(34,
 todas_as_salas = abas_fixas + salas_de_aula
 
 if logado:
-    st.sidebar.success("Logado: Diretoria")
+    st.sidebar.success("Sessão Ativa: Diretoria")
+    if st.sidebar.button("Sair / Logoff"):
+        st.session_state.logado = False
+        st.rerun()
     
     # --- MÓDULO DE BACKUP ---
     st.sidebar.markdown("---")
@@ -105,7 +119,6 @@ if logado:
     st.sidebar.markdown("---")
     tipo_agendamento = st.sidebar.radio("Tipo de Agendamento", ["Pontual", "Por Período (Recorrente)"])
     
-    # --- FORMULÁRIO DE AGENDAMENTO ---
     with st.sidebar.form("form_reserva"):
         sala_sel = st.selectbox("Selecione o Espaço", todas_as_salas)
         if tipo_agendamento == "Pontual":
@@ -128,15 +141,10 @@ if logado:
         evento = st.text_area("Finalidade/Evento")
         solicitante = st.text_input("Solicitante")
         servidor_resp = st.text_input("Servidor Lançador")
-        
-        # Departamento de Origem (Apenas os Departamentos)
         origem_opc = ["DA-FES", "DECON-FES", "DEA-FES", "DIRETORIA", "EXTERNO"]
         origem_sel = st.selectbox("Departamento de Origem", origem_opc)
-
-        # Meio ou forma da solicitação (Substituindo o campo Externo antigo)
         meio_solicitacao = st.selectbox("Meio ou forma da solicitação", ["SEI", "E-mail", "Presencial", "Outro"])
         
-        # Campo condicional: Só aparece se for SEI
         sei_num = ""
         if meio_solicitacao == "SEI":
             sei_num = st.text_input("Nº Processo SEI")
@@ -147,7 +155,6 @@ if logado:
         if status_sel == "Cancelado" and not conf_cancel:
             st.sidebar.error("Confirme o cancelamento.")
         elif evento and solicitante and servidor_resp:
-            # Lógica de Datas
             datas = [data_evento] if tipo_agendamento == "Pontual" else []
             if tipo_agendamento != "Pontual":
                 mapa = {"Segunda":0, "Terça":1, "Quarta":2, "Quinta":3, "Sexta":4, "Sábado":5}
@@ -166,7 +173,7 @@ if logado:
         else:
             st.sidebar.warning("⚠️ Preencha os campos obrigatórios.")
 else:
-    st.sidebar.info("Acesso restrito. Faça login para gerenciar.")
+    st.sidebar.info("Acesso restrito. Utilize o formulário acima para gerenciar o sistema.")
 
 # --- 3. VISUALIZAÇÃO PÚBLICA ---
 def exibir_tabela(nome_sala):
