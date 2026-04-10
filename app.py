@@ -1,16 +1,22 @@
 import streamlit as st
-import sqlite3
+import psycopg2 # Alterado de sqlite3 para psycopg2
+from psycopg2.extras import RealDictCursor
 import pandas as pd
 from datetime import datetime, timedelta, time
 import calendar
 import io
 
-# --- 1. CONFIGURAÇÃO E BANCO DE DATOS ---
+# --- 1. CONFIGURAÇÃO E CONEXÃO COM BANCO EXTERNO (NEON/POSTGRES) ---
+def get_connection():
+    """Cria uma conexão com o banco de dados PostgreSQL no Neon."""
+    return psycopg2.connect(st.secrets["DB_URL"])
+
 def init_db():
-    conn = sqlite3.connect('agendamentos_direcao.db')
+    conn = get_connection()
     c = conn.cursor()
+    # No Postgres usamos SERIAL para auto-incremento em vez de AUTOINCREMENT
     c.execute('''CREATE TABLE IF NOT EXISTS reservas
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 (id SERIAL PRIMARY KEY,
                   sala TEXT,
                   data TEXT,
                   horario_inicio TEXT,
@@ -21,21 +27,23 @@ def init_db():
                   status TEXT,
                   servidor_resp TEXT)''')
     conn.commit()
+    c.close()
     conn.close()
 
 def verificar_conflito(sala, data, inicio, fim, id_ignorar=None):
     """Verifica se existe sobreposição de horários na mesma sala e data."""
-    conn = sqlite3.connect('agendamentos_direcao.db')
+    conn = get_connection()
     c = conn.cursor()
-    query = "SELECT id, horario_inicio, horario_fim FROM reservas WHERE sala=? AND data=? AND status != 'Cancelado'"
+    query = "SELECT id, horario_inicio, horario_fim FROM reservas WHERE sala=%s AND data=%s AND status != 'Cancelado'"
     params = [sala, data]
     
     if id_ignorar:
-        query += " AND id != ?"
+        query += " AND id != %s"
         params.append(id_ignorar)
         
     c.execute(query, params)
     agendamentos = c.fetchall()
+    c.close()
     conn.close()
 
     format_h = '%H:%M'
@@ -51,20 +59,23 @@ def verificar_conflito(sala, data, inicio, fim, id_ignorar=None):
     return False 
 
 def atualizar_reserva(id_reserva, evento, origem, sei, status, servidor, h_i, h_f, data):
-    conn = sqlite3.connect('agendamentos_direcao.db')
+    conn = get_connection()
     c = conn.cursor()
-    c.execute("""UPDATE reservas SET evento=?, origem=?, numero_sei=?, status=?, servidor_resp=?, 
-                 horario_inicio=?, horario_fim=?, data=? WHERE id=?""", 
+    c.execute("""UPDATE reservas SET evento=%s, origem=%s, numero_sei=%s, status=%s, servidor_resp=%s, 
+                 horario_inicio=%s, horario_fim=%s, data=%s WHERE id=%s""", 
               (evento, origem, sei, status, servidor, h_i, h_f, data, id_reserva))
     conn.commit()
+    c.close()
     conn.close()
 
 def salvar_reserva(sala, data, inicio, fim, evento, origem, sei, status, servidor):
-    conn = sqlite3.connect('agendamentos_direcao.db')
+    conn = get_connection()
     c = conn.cursor()
     c.execute("""INSERT INTO reservas (sala, data, horario_inicio, horario_fim, evento, origem, numero_sei, status, servidor_resp) 
-                 VALUES (?,?,?,?,?,?,?,?,?)""", (sala, data, inicio, fim, evento, origem, sei, status, servidor))
+                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""", 
+              (sala, data, inicio, fim, evento, origem, sei, status, servidor))
     conn.commit()
+    c.close()
     conn.close()
     return True
 
@@ -88,10 +99,13 @@ with st.sidebar.form("login_form"):
     u_input = st.text_input("Usuário")
     s_input = st.text_input("Senha", type="password")
     if st.form_submit_button("Acessar Sistema"):
-        if u_input == "diretoriafes" and s_input == "secretariafes2021/2":
-            st.session_state.logado = True
-            st.rerun()
-        else: st.error("Dados inválidos.")
+        try:
+            if u_input == st.secrets["LOGIN_USER"] and s_input == st.secrets["LOGIN_PWD"]:
+                st.session_state.logado = True
+                st.rerun()
+            else: st.error("Dados inválidos.")
+        except:
+            st.error("Erro: Configure as credenciais nos Secrets do Streamlit.")
 
 logado = st.session_state.logado
 abas_fixas = ["Auditório Rio Amazonas", "Laboratório de Informática", "Sala de Reunião", "Salas de Aula"]
@@ -101,7 +115,6 @@ todas_as_salas = abas_fixas[:3] + salas_de_aula_list
 if logado:
     st.sidebar.success("Sessão Ativa")
     
-    # --- AVISO LGPD ---
     st.sidebar.warning("""
     ⚠️ **AVISO LGPD**
     Dados sensíveis (CPFs, contatos pessoais, etc.) **não devem** constar aqui. 
@@ -113,7 +126,7 @@ if logado:
         st.rerun()
     
     st.sidebar.markdown("---")
-    conn = sqlite3.connect('agendamentos_direcao.db')
+    conn = get_connection()
     df_total = pd.read_sql_query("SELECT * FROM reservas", conn)
     conn.close()
     if not df_total.empty:
@@ -225,8 +238,8 @@ def calendario_compacto(df_sala, n_sala):
     st.markdown(html_cal + "</table>", unsafe_allow_html=True)
 
 def exibir_tabela(n_sala, mostrar_cal=True):
-    conn = sqlite3.connect('agendamentos_direcao.db')
-    df = pd.read_sql_query("SELECT * FROM reservas WHERE sala=? ORDER BY data DESC", conn, params=(n_sala,))
+    conn = get_connection()
+    df = pd.read_sql_query("SELECT * FROM reservas WHERE sala=%s ORDER BY data DESC", conn, params=(n_sala,))
     conn.close()
     if mostrar_cal: calendario_compacto(df, n_sala)
     st.write("---")
@@ -261,7 +274,9 @@ def exibir_tabela(n_sala, mostrar_cal=True):
                 with st.popover("🗑️ Excluir"):
                     confirmar = st.checkbox("Confirmar exclusão definitiva", key=f"check_del_{id_edit}")
                     if st.button("CONFIRMAR", key=f"btn_del_{id_edit}", disabled=not confirmar, type="primary"):
-                        conn = sqlite3.connect('agendamentos_direcao.db'); conn.execute("DELETE FROM reservas WHERE id=?", (id_edit,)); conn.commit(); conn.close()
+                        conn = get_connection(); c = conn.cursor()
+                        c.execute("DELETE FROM reservas WHERE id=%s", (id_edit,))
+                        conn.commit(); c.close(); conn.close()
                         st.rerun()
 
 # --- 4. ABA RESUMO (MAPA DE OCUPAÇÃO SEMANAL NAVEGÁVEL) ---
@@ -287,7 +302,7 @@ def resumo_semanal_navegavel():
         """, unsafe_allow_html=True)
 
     st.write("")
-    conn = sqlite3.connect('agendamentos_direcao.db')
+    conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM reservas WHERE status != 'Cancelado' AND sala LIKE 'Sala%'", conn)
     conn.close()
 
@@ -358,4 +373,4 @@ with t3: exibir_tabela("Sala de Reunião")
 with t4: resumo_semanal_navegavel()
 
 # --- RODAPÉ ---
-st.markdown("<br><br><p style='text-align: center; color: #6b7280; font-size: 14px;'>🚀 Desenvolvido por <b>Marcos Candido</b> - Projeto de Extensão</p>", unsafe_allow_html=True)
+st.markdown("<br><br><p style='text-align: center; color: #6b7280; font-size: 14px;'>🚀 Desenvolvido por <b>Marcos Candido</b> - Projeto de Extensão do Curso de Engenharia de Software</p>", unsafe_allow_html=True)
