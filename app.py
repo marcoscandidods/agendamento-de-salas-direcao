@@ -99,7 +99,6 @@ if logado:
     st.sidebar.markdown("---")
     st.sidebar.subheader("📝 Novo Agendamento")
     
-    # CAMPOS DINÂMICOS (FORA DO FORM PARA RESPOSTA IMEDIATA)
     sala_sel = st.sidebar.selectbox("Espaço", todas_as_salas)
     tipo_ag = st.sidebar.radio("Tipo", ["Pontual", "Por Período"])
     
@@ -115,7 +114,6 @@ if logado:
     if meio_sel == "SEI":
         sei_n = st.sidebar.text_input("Nº Processo SEI")
 
-    # FORMULÁRIO DE DADOS
     with st.sidebar.form("form_final"):
         if tipo_ag == "Pontual":
             data_ev = st.date_input("Data", format="DD/MM/YYYY")
@@ -143,8 +141,6 @@ if logado:
                 st.error("Confirme o cancelamento.")
             elif evento and servidor:
                 ori_final = esp_ext if origem_sel == "EXTERNO" else origem_sel
-                
-                # CORREÇÃO DA VARIÁVEL: datas
                 datas_lista = []
                 if tipo_ag == "Pontual":
                     datas_lista = [data_ev]
@@ -157,10 +153,8 @@ if logado:
                             datas_lista.append(curr)
                         curr += timedelta(days=1)
                 
-                sucs = 0
                 for d in datas_lista:
-                    if salvar_reserva(sala_sel, d.strftime('%d/%m/%Y'), str(h_i), str(h_f), evento, ori_final, sei_n, st_sel, servidor):
-                        sucs += 1
+                    salvar_reserva(sala_sel, d.strftime('%d/%m/%Y'), str(h_i), str(h_f), evento, ori_final, sei_n, st_sel, servidor)
                 st.rerun()
             else:
                 st.warning("Preencha os campos obrigatórios.")
@@ -170,15 +164,27 @@ def exibir_tabela(n_sala):
     conn = sqlite3.connect('agendamentos_direcao.db')
     df = pd.read_sql_query("SELECT * FROM reservas WHERE sala=? ORDER BY data DESC", conn, params=(n_sala,))
     conn.close()
+
+    # Visualização de Calendário rápido (Dias com agendamento)
     if not df.empty:
-        df = df.drop(columns=['sala'])
-        df.columns = ['ID', 'Data', 'Início', 'Fim', 'Descrição', 'Solicitante', 'Nº SEI', 'Status', 'Lançado por']
+        st.write(f"📅 **Visão Rápida de Ocupação:**")
+        datas_ocupadas = pd.to_datetime(df[df['status'] != 'Cancelado']['data'], format='%d/%m/%Y')
+        st.date_input(f"Selecione para ver detalhes ({n_sala})", value=None, key=f"cal_{n_sala}")
+        
+        # Ajuste de Colunas: Status em primeiro, sem ID
+        df_display = df.copy()
+        # Reordenando: Status, Data, Início, Fim, Descrição, Solicitante, SEI, Servidor
+        df_display = df_display[['status', 'data', 'horario_inicio', 'horario_fim', 'evento', 'origem', 'numero_sei', 'servidor_resp']]
+        df_display.columns = ['Status', 'Data', 'Início', 'Fim', 'Descrição', 'Solicitante', 'Nº SEI', 'Lançado por']
+        
         cores = {'Confirmado': '#d4edda', 'Pré-agendado': '#fff3cd', 'Cancelado': '#f8d7da'}
-        st.dataframe(df.style.map(lambda x: f'background-color: {cores.get(x, "#ffffff")}; color: black', subset=['Status']), use_container_width=True, hide_index=True)
+        st.dataframe(df_display.style.map(lambda x: f'background-color: {cores.get(x, "#ffffff")}; color: black', subset=['Status']), 
+                     use_container_width=True, hide_index=True)
+        
         if logado:
             out = io.BytesIO()
             with pd.ExcelWriter(out, engine='xlsxwriter') as wr:
-                df.to_excel(wr, index=False)
+                df_display.to_excel(wr, index=False)
             st.download_button(f"📥 Excel - {n_sala}", out.getvalue(), f"{n_sala}.xlsx", key=f"d_{n_sala}")
     else:
         st.info(f"Sem agendamentos para {n_sala}.")
@@ -191,4 +197,6 @@ with t3: exibir_tabela("Sala de Reunião")
 st.markdown("---")
 s_ext = st.selectbox("Salas de Aula:", ["Selecione..."] + salas_de_aula)
 if s_ext != "Selecione...": exibir_tabela(s_ext)
+
+st.markdown("---")
 st.caption("🚀 Desenvolvido por **Marcos Candido** - Projeto de Extensão do Curso de Engenharia de Software")
