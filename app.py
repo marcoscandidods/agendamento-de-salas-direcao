@@ -1,5 +1,5 @@
 import streamlit as st
-import psycopg2 # Alterado de sqlite3 para psycopg2
+import psycopg2
 from psycopg2.extras import RealDictCursor
 import pandas as pd
 from datetime import datetime, timedelta, time
@@ -8,13 +8,13 @@ import io
 
 # --- 1. CONFIGURAÇÃO E CONEXÃO COM BANCO EXTERNO (NEON/POSTGRES) ---
 def get_connection():
-    """Cria uma conexão com o banco de dados PostgreSQL no Neon."""
+    """Cria uma conexão com o banco de dados PostgreSQL no Neon usando Secrets."""
     return psycopg2.connect(st.secrets["DB_URL"])
 
 def init_db():
     conn = get_connection()
     c = conn.cursor()
-    # No Postgres usamos SERIAL para auto-incremento em vez de AUTOINCREMENT
+    # No Postgres usamos SERIAL para auto-incremento
     c.execute('''CREATE TABLE IF NOT EXISTS reservas
                  (id SERIAL PRIMARY KEY,
                   sala TEXT,
@@ -94,6 +94,7 @@ if 'data_mapa_ref' not in st.session_state:
 
 if 'logado' not in st.session_state: st.session_state.logado = False
 
+# --- ÁREA DE LOGIN PROTEGIDA ---
 with st.sidebar.form("login_form"):
     st.header("🔐 Área Restrita")
     u_input = st.text_input("Usuário")
@@ -105,7 +106,7 @@ with st.sidebar.form("login_form"):
                 st.rerun()
             else: st.error("Dados inválidos.")
         except:
-            st.error("Erro: Configure as credenciais nos Secrets do Streamlit.")
+            st.error("Erro: Verifique os Secrets no Streamlit Cloud.")
 
 logado = st.session_state.logado
 abas_fixas = ["Auditório Rio Amazonas", "Laboratório de Informática", "Sala de Reunião", "Salas de Aula"]
@@ -114,12 +115,7 @@ todas_as_salas = abas_fixas[:3] + salas_de_aula_list
 
 if logado:
     st.sidebar.success("Sessão Ativa")
-    
-    st.sidebar.warning("""
-    ⚠️ **AVISO LGPD**
-    Dados sensíveis (CPFs, contatos pessoais, etc.) **não devem** constar aqui. 
-    Estas informações devem ser mantidas apenas no processo SEI ou e-mail institucional.
-    """)
+    st.sidebar.warning("⚠️ **AVISO LGPD**: Dados sensíveis não devem constar aqui.")
     
     if st.sidebar.button("Sair"):
         st.session_state.logado = False
@@ -180,9 +176,9 @@ if logado:
                     salvar_reserva(sala_sel_side, d_str, str(h_i)[:5], str(h_f)[:5], evento, ori_f, sei_n, st_sel, servidor)
             
             if conflitos:
-                st.error(f"Erro: Conflito de horário nas datas: {', '.join(conflitos)}. Estes dias não foram salvos.")
+                st.error(f"Erro: Conflito nas datas: {', '.join(conflitos)}")
             else:
-                st.success("Agendamento(s) realizado(s) com sucesso!")
+                st.success("Salvo!")
                 st.rerun()
 
 # --- 3. COMPONENTES VISUAIS ---
@@ -212,13 +208,7 @@ def calendario_compacto(df_sala, n_sala):
                     if dias_ocupados.get(dt.day) != 'Confirmado': dias_ocupados[dt.day] = row['status']
             except: continue
 
-    html_cal = """
-    <style>
-        .cal-table { width:100%; text-align:center; border-collapse: collapse; table-layout: fixed; margin-top:10px;}
-        .cal-table th { font-size:12px; color:gray; padding: 5px; }
-        .cal-table td { border: 1px solid #444 !important; height: 35px; font-size: 13px; font-weight: bold; vertical-align: middle; }
-    </style>
-    """
+    html_cal = """<style>.cal-table { width:100%; text-align:center; border-collapse: collapse; table-layout: fixed; margin-top:10px;}.cal-table th { font-size:12px; color:gray; padding: 5px; }.cal-table td { border: 1px solid #444 !important; height: 35px; font-size: 13px; font-weight: bold; vertical-align: middle; }</style>"""
     html_cal += "<table class='cal-table'><tr>"
     for d in ['D','S','T','Q','Q','S','S']: html_cal += f"<th>{d}</th>"
     html_cal += "</tr>"
@@ -228,11 +218,8 @@ def calendario_compacto(df_sala, n_sala):
             if dia == 0: html_cal += "<td style='border: 1px solid #333 !important;'></td>"
             else:
                 status = dias_ocupados.get(dia)
-                if status == 'Confirmado': bg, color = "#2563EB", "white"
-                elif status == 'Pré-agendado': bg, color = "#D97706", "white"
-                else:
-                    bg = "#1e1e1e" if (i == 0 or i == 6) else "transparent"
-                    color = "#888" if (i == 0 or i == 6) else "#ccc"
+                bg = "#2563EB" if status == 'Confirmado' else ("#D97706" if status == 'Pré-agendado' else ("#1e1e1e" if i==0 or i==6 else "transparent"))
+                color = "white" if status in ['Confirmado', 'Pré-agendado'] else ("#888" if i==0 or i==6 else "#ccc")
                 html_cal += f"<td style='background-color:{bg}; color:{color};'>{dia}</td>"
         html_cal += "</tr>"
     st.markdown(html_cal + "</table>", unsafe_allow_html=True)
@@ -249,87 +236,50 @@ def exibir_tabela(n_sala, mostrar_cal=True):
         if not df_f.empty:
             disp = df_f[['id', 'status', 'data', 'horario_inicio', 'horario_fim', 'evento', 'origem', 'servidor_resp']]
             disp.columns = ['ID', 'Status', 'Data', 'Início', 'Fim', 'Descrição', 'Origem', 'Lançador']
-            st.dataframe(disp.style.map(lambda x: f'background-color: {"#16a34a" if x=="Confirmado" else ("#ca8a04" if x=="Pré-agendado" else "#dc2626")}; color: white; font-weight: bold', subset=['Status']), 
-                         use_container_width=True, hide_index=True)
+            st.dataframe(disp.style.map(lambda x: f'background-color: {"#16a34a" if x=="Confirmado" else ("#ca8a04" if x=="Pré-agendado" else "#dc2626")}; color: white; font-weight: bold', subset=['Status']), use_container_width=True, hide_index=True)
             if logado:
-                with st.expander("✏️ Editar Agendamento"):
+                with st.expander("✏️ Editar"):
                     id_edit = st.selectbox("ID", disp['ID'], key=f"sel_{n_sala}")
                     row_edit = df[df['id'] == id_edit].iloc[0]
                     c1, c2 = st.columns(2)
                     new_ev = c1.text_input("Finalidade", value=row_edit['evento'], key=f"ev_{id_edit}")
-                    new_st = c2.selectbox("Status", ["Confirmado", "Pré-agendado", "Cancelado"], 
-                                             index=["Confirmado", "Pré-agendado", "Cancelado"].index(row_edit['status']), key=f"st_{id_edit}")
+                    new_st = c2.selectbox("Status", ["Confirmado", "Pré-agendado", "Cancelado"], index=["Confirmado", "Pré-agendado", "Cancelado"].index(row_edit['status']), key=f"st_{id_edit}")
                     
-                    h_i_edit = st.time_input("Novo Início", value=datetime.strptime(row_edit['horario_inicio'], '%H:%M').time(), key=f"hi_{id_edit}")
-                    h_f_edit = st.time_input("Novo Término", value=datetime.strptime(row_edit['horario_fim'], '%H:%M').time(), key=f"hf_{id_edit}")
+                    h_i_e = st.time_input("Novo Início", value=datetime.strptime(row_edit['horario_inicio'], '%H:%M').time(), key=f"hi_{id_edit}")
+                    h_f_e = st.time_input("Novo Fim", value=datetime.strptime(row_edit['horario_fim'], '%H:%M').time(), key=f"hf_{id_edit}")
 
                     if st.button("Salvar Alterações", key=f"btn_edit_{id_edit}", use_container_width=True):
-                        if verificar_conflito(row_edit['sala'], row_edit['data'], str(h_i_edit)[:5], str(h_f_edit)[:5], id_ignorar=id_edit):
-                            st.error("Conflito: Já existe um evento neste horário para esta sala.")
+                        if verificar_conflito(row_edit['sala'], row_edit['data'], str(h_i_e)[:5], str(h_f_e)[:5], id_ignorar=id_edit):
+                            st.error("Conflito!")
                         else:
-                            atualizar_reserva(id_edit, new_ev, row_edit['origem'], row_edit['numero_sei'], new_st, row_edit['servidor_resp'], 
-                                              str(h_i_edit)[:5], str(h_f_edit)[:5], row_edit['data'])
+                            atualizar_reserva(id_edit, new_ev, row_edit['origem'], row_edit['numero_sei'], new_st, row_edit['servidor_resp'], str(h_i_e)[:5], str(h_f_e)[:5], row_edit['data'])
                             st.rerun()
-
                 with st.popover("🗑️ Excluir"):
-                    confirmar = st.checkbox("Confirmar exclusão definitiva", key=f"check_del_{id_edit}")
-                    if st.button("CONFIRMAR", key=f"btn_del_{id_edit}", disabled=not confirmar, type="primary"):
-                        conn = get_connection(); c = conn.cursor()
-                        c.execute("DELETE FROM reservas WHERE id=%s", (id_edit,))
-                        conn.commit(); c.close(); conn.close()
+                    if st.button("Confirmar", key=f"btn_del_{id_edit}", type="primary"):
+                        conn = get_connection(); c = conn.cursor(); c.execute("DELETE FROM reservas WHERE id=%s", (id_edit,)); conn.commit(); c.close(); conn.close()
                         st.rerun()
 
-# --- 4. ABA RESUMO (MAPA DE OCUPAÇÃO SEMANAL NAVEGÁVEL) ---
+# --- 4. MAPA SEMANAL NAVEGÁVEL ---
 def resumo_semanal_navegavel():
     c1, c2, c3 = st.columns([1, 3, 1])
     with c1:
         if st.button("◀ Semana Anterior", use_container_width=True):
-            st.session_state.data_mapa_ref -= timedelta(days=7)
-            st.rerun()
+            st.session_state.data_mapa_ref -= timedelta(days=7); st.rerun()
     with c3:
         if st.button("Próxima Semana ▶", use_container_width=True):
-            st.session_state.data_mapa_ref += timedelta(days=7)
-            st.rerun()
+            st.session_state.data_mapa_ref += timedelta(days=7); st.rerun()
             
     segunda = st.session_state.data_mapa_ref
     sabado = segunda + timedelta(days=5)
-    
-    with c2:
-        st.markdown(f"""
-            <div style='text-align:center; padding:5px; background-color:#1e1e1e; border-radius:10px; border:1px solid #333;'>
-                <h4 style='margin:0; color:#2563EB;'>Semana: {segunda.strftime('%d/%m')} a {sabado.strftime('%d/%m/%Y')}</h4>
-            </div>
-        """, unsafe_allow_html=True)
+    st.markdown(f"<div style='text-align:center; padding:10px; background:#1e1e1e; border-radius:10px; border:1px solid #333;'><h4 style='margin:0; color:#2563EB;'>Semana: {segunda.strftime('%d/%m')} a {sabado.strftime('%d/%m/%Y')}</h4></div>", unsafe_allow_html=True)
 
-    st.write("")
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM reservas WHERE status != 'Cancelado' AND sala LIKE 'Sala%'", conn)
     conn.close()
 
-    st.markdown("""
-        <style>
-        .resumo-container { display: flex; flex-direction: column; gap: 12px; width: 100%; }
-        .resumo-row { display: grid; grid-template-columns: 120px 1fr; border-bottom: 1px solid #333; padding: 10px 0; align-items: start; }
-        .resumo-sala { font-weight: bold; color: #fff; font-size: 15px; background: #262730; padding: 10px; border-radius: 8px; text-align: center; border: 1px solid #444; }
-        .resumo-dias { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
-        .dia-col { min-width: 0; }
-        .dia-header { font-size: 10px; color: #888; text-transform: uppercase; margin-bottom: 6px; text-align: center; font-weight: bold; }
-        .card-container { display: flex; flex-direction: column; gap: 5px; }
-        .event-card { 
-            font-size: 10px; padding: 6px; border-radius: 6px; color: white; line-height: 1.2;
-            word-wrap: break-word; font-weight: 600; box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
-        }
-        .vazio { color: #333; font-size: 14px; text-align: center; }
-        @media (max-width: 768px) {
-            .resumo-row { grid-template-columns: 1fr; }
-            .resumo-dias { grid-template-columns: 1fr 1fr; } 
-            .resumo-sala { margin-bottom: 10px; background: #2563EB; }
-        }
-        </style>
-    """, unsafe_allow_html=True)
+    st.markdown("""<style>.resumo-container { display: flex; flex-direction: column; gap: 12px; width: 100%; }.resumo-row { display: grid; grid-template-columns: 120px 1fr; border-bottom: 1px solid #333; padding: 10px 0; align-items: start; }.resumo-sala { font-weight: bold; color: #fff; font-size: 15px; background: #262730; padding: 10px; border-radius: 8px; text-align: center; border: 1px solid #444; }.resumo-dias { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }.dia-col { min-width: 0; }.dia-header { font-size: 10px; color: #888; text-transform: uppercase; margin-bottom: 6px; text-align: center; font-weight: bold; }.card-container { display: flex; flex-direction: column; gap: 5px; }.event-card { font-size: 10px; padding: 6px; border-radius: 6px; color: white; line-height: 1.2; word-wrap: break-word; font-weight: 600; box-shadow: 2px 2px 5px rgba(0,0,0,0.2); }.vazio { color: #333; font-size: 14px; text-align: center; }</style>""", unsafe_allow_html=True)
 
     dias_semana_nomes = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"]
-    
     def get_color(origem):
         if "DA-FES" in origem: return "#1e40af"
         if "DECON" in origem: return "#166534"
@@ -337,13 +287,11 @@ def resumo_semanal_navegavel():
         if "DIRETORIA" in origem: return "#6b21a8"
         return "#4b5563"
 
-    html = "<div class='resumo-container'>"
     datas_semana = [(segunda + timedelta(days=i)).strftime('%d/%m/%Y') for i in range(6)]
-
+    html = "<div class='resumo-container'>"
     for s in salas_de_aula_list:
         df_sala = df[df['sala'] == s].copy()
-        html += f"<div class='resumo-row'><div class='resumo-sala'>{s}</div>"
-        html += "<div class='resumo-dias'>"
+        html += f"<div class='resumo-row'><div class='resumo-sala'>{s}</div><div class='resumo-dias'>"
         for idx, d_nome in enumerate(dias_semana_nomes):
             data_alvo = datas_semana[idx]
             html += f"<div class='dia-col'><div class='dia-header'>{d_nome} ({data_alvo[:5]})</div><div class='card-container'>"
@@ -351,18 +299,15 @@ def resumo_semanal_navegavel():
                 eventos = df_sala[df_sala['data'] == data_alvo].sort_values(by="horario_inicio")
                 if not eventos.empty:
                     for _, r in eventos.drop_duplicates(subset=['horario_inicio', 'horario_fim', 'origem']).iterrows():
-                        cor = get_color(r['origem'])
-                        html += f"<div class='event-card' style='background-color:{cor};'>{r['horario_inicio']}-{r['horario_fim']}<br>{r['origem']}</div>"
+                        html += f"<div class='event-card' style='background-color:{get_color(r['origem'])};'>{r['horario_inicio']}-{r['horario_fim']}<br>{r['origem']}</div>"
                 else: html += "<div class='vazio'>-</div>"
             else: html += "<div class='vazio'>-</div>"
             html += "</div></div>"
         html += "</div></div>"
-    html += "</div>"
-    st.markdown(html, unsafe_allow_html=True)
+    st.markdown(html + "</div>", unsafe_allow_html=True)
     
     st.markdown("---")
-    st.write("#### 🔍 Consultar Detalhes Específicos")
-    s_det = st.selectbox("Escolha uma sala para gerenciar:", ["Selecione..."] + salas_de_aula_list)
+    s_det = st.selectbox("Escolha uma sala:", ["Selecione..."] + salas_de_aula_list)
     if s_det != "Selecione...": exibir_tabela(s_det)
 
 # --- EXECUÇÃO ---
@@ -372,5 +317,4 @@ with t2: exibir_tabela("Laboratório de Informática")
 with t3: exibir_tabela("Sala de Reunião")
 with t4: resumo_semanal_navegavel()
 
-# --- RODAPÉ ---
-st.markdown("<br><br><p style='text-align: center; color: #6b7280; font-size: 14px;'>🚀 Desenvolvido por <b>Marcos Candido</b> - Projeto de Extensão do Curso de Engenharia de Software</p>", unsafe_allow_html=True)
+st.markdown("<br><p style='text-align: center; color: #6b7280; font-size: 14px;'>🚀 Desenvolvido por <b>Marcos Candido</b></p>", unsafe_allow_html=True)
