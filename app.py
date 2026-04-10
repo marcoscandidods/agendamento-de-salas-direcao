@@ -2,9 +2,8 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 from datetime import datetime, timedelta
+import calendar
 import io
-# Nova biblioteca para o calendário ficar sempre aberto
-from streamlit_calendar import calendar
 
 # --- 1. CONFIGURAÇÃO E BANCO DE DATOS ---
 def init_db():
@@ -108,7 +107,7 @@ if logado:
     origem_sel = st.sidebar.selectbox("Solicitante", origem_opc)
     esp_ext = ""
     if origem_sel == "EXTERNO":
-        esp_ext = st.sidebar.text_input("Especificar Externo (Quem?)")
+        esp_ext = st.sidebar.text_input("Especificar Externo")
     
     meio_opc = ["E-mail", "SEI", "Presencial", "Outro"]
     meio_sel = st.sidebar.selectbox("Meio da solicitação", meio_opc)
@@ -118,7 +117,7 @@ if logado:
 
     with st.sidebar.form("form_final"):
         if tipo_ag == "Pontual":
-            data_ev = st.date_input("Data do Evento", format="DD/MM/YYYY")
+            data_ev = st.date_input("Data", format="DD/MM/YYYY")
             d_i, d_f, dias = None, None, []
         else:
             c1, c2 = st.columns(2)
@@ -147,60 +146,66 @@ if logado:
                 if tipo_ag == "Pontual":
                     datas_lista = [data_ev]
                 else:
-                    m = {"Segunda":0, "Terça":1, "Quarta":2, "Quinta":3, "Sexta":4, "Sábado":5}
-                    ind = [m[d] for d in dias]
+                    m_d = {"Segunda":0, "Terça":1, "Quarta":2, "Quinta":3, "Sexta":4, "Sábado":5}
+                    ind = [m_d[d] for d in dias]
                     curr = d_i
                     while curr <= d_f:
-                        if curr.weekday() in ind:
-                            datas_lista.append(curr)
+                        if curr.weekday() in ind: datas_lista.append(curr)
                         curr += timedelta(days=1)
                 
                 for d in datas_lista:
                     salvar_reserva(sala_sel, d.strftime('%d/%m/%Y'), str(h_i), str(h_f), evento, ori_final, sei_n, st_sel, servidor)
                 st.rerun()
-            else:
-                st.warning("Preencha os campos obrigatórios.")
 
-# --- 3. VISUALIZAÇÃO ---
+# --- 3. FUNÇÃO DE CALENDÁRIO COMPACTO ---
+def mini_calendario_ocupacao(df_sala):
+    hoje = datetime.now()
+    ano, mes = hoje.year, hoje.month
+    nome_mes = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"][mes-1]
+    
+    st.write(f"🔍 **Ocupação em {nome_mes}/{ano}:**")
+    
+    # Mapeia dias ocupados
+    dias_ocupados = {}
+    if not df_sala.empty:
+        for _, row in df_sala.iterrows():
+            try:
+                dt = datetime.strptime(row['data'], '%d/%m/%Y')
+                if dt.year == ano and dt.month == mes:
+                    dias_ocupados[dt.day] = row['status']
+            except: continue
+
+    # Cria a visualização em colunas pequenas (7 dias por linha)
+    num_dias = calendar.monthrange(ano, mes)[1]
+    cols = st.columns(15) # Exibe 15 dias por linha para ficar bem pequeno
+    
+    for dia in range(1, num_dias + 1):
+        idx = (dia - 1) % 15
+        with cols[idx]:
+            status_dia = dias_ocupados.get(dia)
+            if status_dia == 'Confirmado':
+                st.markdown(f"<div style='text-align:center; background-color:#3D5AFE; color:white; border-radius:5px; padding:2px; font-size:12px;'>{dia}</div>", unsafe_allow_html=True)
+            elif status_dia == 'Pré-agendado':
+                st.markdown(f"<div style='text-align:center; background-color:#FFAB00; color:black; border-radius:5px; padding:2px; font-size:12px;'>{dia}</div>", unsafe_allow_html=True)
+            else:
+                st.markdown(f"<div style='text-align:center; background-color:#eeeeee; color:#999999; border-radius:5px; padding:2px; font-size:12px;'>{dia}</div>", unsafe_allow_html=True)
+        if dia == 15: # Pula linha após 15 dias
+            cols = st.columns(15)
+
+# --- 4. VISUALIZAÇÃO ---
 def exibir_tabela(n_sala):
     conn = sqlite3.connect('agendamentos_direcao.db')
     df = pd.read_sql_query("SELECT * FROM reservas WHERE sala=? ORDER BY data DESC", conn, params=(n_sala,))
     conn.close()
 
-    # --- CALENDÁRIO VISÍVEL NO TOPO (FULL CALENDAR) ---
-    st.write(f"📅 **Calendário de Ocupação: {n_sala}**")
-    
-    calendar_events = []
-    if not df.empty:
-        for _, row in df.iterrows():
-            if row['status'] != 'Cancelado':
-                # Converte data para formato ISO para o calendário
-                data_iso = datetime.strptime(row['data'], '%d/%m/%Y').strftime('%Y-%m-%d')
-                calendar_events.append({
-                    "title": f"{row['horario_inicio']} - {row['evento']}",
-                    "start": data_iso,
-                    "end": data_iso,
-                    "color": "#3D5AFE" if row['status'] == 'Confirmado' else "#FFAB00"
-                })
-
-    calendar_options = {
-        "headerToolbar": {
-            "left": "prev,next today",
-            "center": "title",
-            "right": "dayGridMonth,timeGridWeek"
-        },
-        "initialView": "dayGridMonth",
-        "locale": "pt-br",
-    }
-    
-    calendar(events=calendar_events, options=calendar_options, key=f"full_cal_{n_sala}")
-
-    st.markdown("---")
+    # Exibe o mini calendário no topo
+    mini_calendario_ocupacao(df)
+    st.markdown("<br>", unsafe_allow_html=True)
 
     if not df.empty:
         df_display = df.copy()
         df_display = df_display[['status', 'data', 'horario_inicio', 'horario_fim', 'evento', 'origem', 'numero_sei', 'servidor_resp']]
-        df_display.columns = ['Status', 'Data', 'Início', 'Fim', 'Descrição', 'Origem', 'Nº SEI', 'Lançado por']
+        df_display.columns = ['Status', 'Data', 'Início', 'Fim', 'Descrição', 'Solicitante', 'Nº SEI', 'Lançado por']
         
         cores = {'Confirmado': '#d4edda', 'Pré-agendado': '#fff3cd', 'Cancelado': '#f8d7da'}
         st.dataframe(df_display.style.map(lambda x: f'background-color: {cores.get(x, "#ffffff")}; color: black', subset=['Status']), 
@@ -212,7 +217,7 @@ def exibir_tabela(n_sala):
                 df_display.to_excel(wr, index=False)
             st.download_button(f"📥 Excel - {n_sala}", out.getvalue(), f"{n_sala}.xlsx", key=f"d_{n_sala}")
     else:
-        st.info(f"Sem agendamentos registrados para {n_sala}.")
+        st.info(f"Sem agendamentos para {n_sala}.")
 
 st.subheader("🗓️ Cronograma Principal")
 t1, t2, t3 = st.tabs(abas_fixas)
