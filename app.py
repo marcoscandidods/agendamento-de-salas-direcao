@@ -155,18 +155,11 @@ def calendario_compacto(df_sala, n_sala):
                     if dias_ocupados.get(dt.day) != 'Confirmado': dias_ocupados[dt.day] = row['status']
             except: continue
 
-    # Estilo CSS para garantir bordas uniformes em todas as células
     html_cal = """
     <style>
         .cal-table { width:100%; text-align:center; border-collapse: collapse; table-layout: fixed; }
         .cal-table th { font-size:12px; color:gray; padding: 5px; }
-        .cal-table td { 
-            border: 1px solid #444 !important; 
-            height: 40px; 
-            font-size: 14px; 
-            font-weight: bold;
-            vertical-align: middle;
-        }
+        .cal-table td { border: 1px solid #444 !important; height: 40px; font-size: 14px; font-weight: bold; vertical-align: middle; }
     </style>
     """
     html_cal += "<table class='cal-table'><tr>"
@@ -180,19 +173,13 @@ def calendario_compacto(df_sala, n_sala):
                 html_cal += "<td style='border: 1px solid #333 !important;'></td>"
             else:
                 status = dias_ocupados.get(dia)
-                # Cores de fundo baseadas no status
-                if status == 'Confirmado':
-                    bg, color = "#2563EB", "white"
-                elif status == 'Pré-agendado':
-                    bg, color = "#D97706", "white"
+                if status == 'Confirmado': bg, color = "#2563EB", "white"
+                elif status == 'Pré-agendado': bg, color = "#D97706", "white"
                 else:
-                    # Final de semana (D=0, S=6)
                     bg = "#1e1e1e" if (i == 0 or i == 6) else "transparent"
                     color = "#888" if (i == 0 or i == 6) else "#ccc"
-                
                 html_cal += f"<td style='background-color:{bg}; color:{color};'>{dia}</td>"
         html_cal += "</tr>"
-    
     st.markdown(html_cal + "</table>", unsafe_allow_html=True)
 
 def exibir_tabela(n_sala, mostrar_cal=True):
@@ -218,7 +205,6 @@ def exibir_tabela(n_sala, mostrar_cal=True):
                     new_ev = c1.text_input("Finalidade", value=row_edit['evento'], key=f"ev_{id_edit}")
                     new_st = c2.selectbox("Status", ["Confirmado", "Pré-agendado", "Cancelado"], 
                                              index=["Confirmado", "Pré-agendado", "Cancelado"].index(row_edit['status']), key=f"st_{id_edit}")
-                    
                     if st.button("Salvar Alterações", key=f"btn_edit_{id_edit}", use_container_width=True):
                         atualizar_reserva(id_edit, new_ev, row_edit['origem'], row_edit['numero_sei'], new_st, row_edit['servidor_resp'], 
                                           row_edit['horario_inicio'], row_edit['horario_fim'], row_edit['data'])
@@ -226,7 +212,6 @@ def exibir_tabela(n_sala, mostrar_cal=True):
 
                 with st.popover("🗑️ Opções de Exclusão"):
                     st.error("⚠️ ZONA DE PERIGO")
-                    st.write(f"Você está selecionando o ID: {id_edit}")
                     confirmar = st.checkbox("Confirmo que desejo excluir este registro definitivamente.", key=f"check_del_{id_edit}")
                     if st.button("EXCLUIR AGENDAMENTO", key=f"btn_del_{id_edit}", disabled=not confirmar, type="primary", use_container_width=True):
                         conn = sqlite3.connect('agendamentos_direcao.db')
@@ -252,7 +237,8 @@ def resumo_semestral():
                 df_sala_dia['dw'] = pd.to_datetime(df_sala_dia['data'], format='%d/%m/%Y').dt.weekday
                 eventos = df_sala_dia[df_sala_dia['dw'] == m_d[d_nome]]
                 if not eventos.empty:
-                    txt = " | ".join([f"{r['horario_inicio']}-{r['horario_fim']} ({r['origem']})" for _, r in eventos.drop_duplicates(subset=['horario_inicio', 'horario_fim', 'origem']).iterrows()])
+                    # AJUSTE AQUI: Trocado " | " por "<br>" para quebrar linha no HTML
+                    txt = "<br>".join([f"{r['horario_inicio']}-{r['horario_fim']} ({r['origem']})" for _, r in eventos.drop_duplicates(subset=['horario_inicio', 'horario_fim', 'origem']).iterrows()])
                     linha[d_nome] = txt
                 else: linha[d_nome] = "-"
             else: linha[d_nome] = "-"
@@ -267,7 +253,8 @@ def resumo_semestral():
         if "DIRETORIA" in val: return 'background-color: #6b21a8; color: white; font-weight: bold'
         return 'color: #9ca3af'
 
-    st.dataframe(df_resumo.style.map(colorir_celula), use_container_width=True, hide_index=True)
+    # AJUSTE AQUI: st.write(df.to_html) permite renderizar o <br> como quebra de linha real
+    st.write(df_resumo.style.map(colorir_celula).to_html(escape=False, index=False), unsafe_allow_html=True)
     
     st.markdown("---")
     st.write("#### 🔍 Detalhes por Sala")
