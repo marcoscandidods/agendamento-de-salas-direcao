@@ -14,7 +14,6 @@ def get_connection():
 def init_db():
     conn = get_connection()
     c = conn.cursor()
-    # No Postgres usamos SERIAL para auto-incremento
     c.execute('''CREATE TABLE IF NOT EXISTS reservas
                  (id SERIAL PRIMARY KEY,
                   sala TEXT,
@@ -79,6 +78,16 @@ def salvar_reserva(sala, data, inicio, fim, evento, origem, sei, status, servido
     conn.close()
     return True
 
+# --- FUNÇÃO AUXILIAR PARA LISTA DE HORÁRIOS ---
+def gerar_lista_horarios():
+    horarios = []
+    start = datetime.strptime("07:00", "%H:%M")
+    end = datetime.strptime("23:00", "%H:%M")
+    while start <= end:
+        horarios.append(start.strftime("%H:%M"))
+        start += timedelta(minutes=30)
+    return horarios
+
 # --- 2. INTERFACE E SESSÃO ---
 st.set_page_config(page_title="Gestão de Espaços - Direção", layout="wide")
 init_db()
@@ -101,7 +110,6 @@ with st.sidebar.form("login_form"):
     s_input = st.text_input("Senha", type="password")
     
     if st.form_submit_button("Acessar Sistema"):
-        # Verifica se as chaves existem nos Secrets antes de tentar comparar
         if "LOGIN_USER" in st.secrets and "LOGIN_PWD" in st.secrets:
             if u_input == st.secrets["LOGIN_USER"] and s_input == st.secrets["LOGIN_PWD"]:
                 st.session_state.logado = True
@@ -109,13 +117,13 @@ with st.sidebar.form("login_form"):
             else:
                 st.error("Usuário ou senha incorretos.")
         else:
-            # Este erro só aparecerá se você esquecer de preencher os segredos no painel
-            st.error("Erro crítico: As chaves de login não foram configuradas nos Secrets do Streamlit.")
+            st.error("Erro crítico: As chaves de login não foram configuradas nos Secrets.")
 
 logado = st.session_state.logado
 abas_fixas = ["Auditório Rio Amazonas", "Laboratório de Informática", "Sala de Reunião", "Salas de Aula"]
 salas_de_aula_list = ["Sala 1", "Sala 2", "Sala 4"] + [f"Sala {i}" for i in range(34, 62)]
 todas_as_salas = abas_fixas[:3] + salas_de_aula_list
+lista_h = gerar_lista_horarios()
 
 if logado:
     st.sidebar.success("Sessão Ativa")
@@ -154,8 +162,10 @@ if logado:
             d_f = st.date_input("Fim", format="DD/MM/YYYY")
             dias = st.multiselect("Dias", ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"])
         
-        h_i = st.time_input("Início", value=time(8, 0), step=1800)
-        h_f = st.time_input("Término", value=time(9, 0), step=1800)
+        # Ajuste: Selectbox para horários
+        h_i = st.selectbox("Horário Início", lista_h, index=lista_h.index("08:00"))
+        h_f = st.selectbox("Horário Término", lista_h, index=lista_h.index("09:00"))
+        
         st_sel = st.selectbox("Status", ["Confirmado", "Pré-agendado", "Cancelado"])
         evento = st.text_area("Finalidade")
         servidor = st.text_input("Lançador")
@@ -174,15 +184,15 @@ if logado:
             conflitos = []
             for d in datas:
                 d_str = d.strftime('%d/%m/%Y')
-                if verificar_conflito(sala_sel_side, d_str, str(h_i)[:5], str(h_f)[:5]):
+                if verificar_conflito(sala_sel_side, d_str, h_i, h_f):
                     conflitos.append(d_str)
                 else:
-                    salvar_reserva(sala_sel_side, d_str, str(h_i)[:5], str(h_f)[:5], evento, ori_f, sei_n, st_sel, servidor)
+                    salvar_reserva(sala_sel_side, d_str, h_i, h_f, evento, ori_f, sei_n, st_sel, servidor)
             
             if conflitos:
                 st.error(f"Erro: Conflito nas datas: {', '.join(conflitos)}")
             else:
-                st.success("Salvo!")
+                st.success("Salvo com sucesso!")
                 st.rerun()
 
 # --- 3. COMPONENTES VISUAIS ---
@@ -242,28 +252,32 @@ def exibir_tabela(n_sala, mostrar_cal=True):
             disp.columns = ['ID', 'Status', 'Data', 'Início', 'Fim', 'Descrição', 'Origem', 'Lançador']
             st.dataframe(disp.style.map(lambda x: f'background-color: {"#16a34a" if x=="Confirmado" else ("#ca8a04" if x=="Pré-agendado" else "#dc2626")}; color: white; font-weight: bold', subset=['Status']), use_container_width=True, hide_index=True)
             if logado:
-                with st.expander("✏️ Editar"):
-                    id_edit = st.selectbox("ID", disp['ID'], key=f"sel_{n_sala}")
+                with st.expander("✏️ Editar Agendamento"):
+                    id_edit = st.selectbox("Selecione o ID", disp['ID'], key=f"sel_{n_sala}")
                     row_edit = df[df['id'] == id_edit].iloc[0]
                     c1, c2 = st.columns(2)
                     new_ev = c1.text_input("Finalidade", value=row_edit['evento'], key=f"ev_{id_edit}")
                     new_st = c2.selectbox("Status", ["Confirmado", "Pré-agendado", "Cancelado"], index=["Confirmado", "Pré-agendado", "Cancelado"].index(row_edit['status']), key=f"st_{id_edit}")
                     
-                    h_i_e = st.time_input("Novo Início", value=datetime.strptime(row_edit['horario_inicio'], '%H:%M').time(), key=f"hi_{id_edit}")
-                    h_f_e = st.time_input("Novo Fim", value=datetime.strptime(row_edit['horario_fim'], '%H:%M').time(), key=f"hf_{id_edit}")
+                    # Ajuste: Selectbox na edição
+                    h_i_e = st.selectbox("Novo Início", lista_h, index=lista_h.index(row_edit['horario_inicio']), key=f"hi_{id_edit}")
+                    h_f_e = st.selectbox("Novo Término", lista_h, index=lista_h.index(row_edit['horario_fim']), key=f"hf_{id_edit}")
 
                     if st.button("Salvar Alterações", key=f"btn_edit_{id_edit}", use_container_width=True):
-                        if verificar_conflito(row_edit['sala'], row_edit['data'], str(h_i_e)[:5], str(h_f_e)[:5], id_ignorar=id_edit):
-                            st.error("Conflito!")
+                        if verificar_conflito(row_edit['sala'], row_edit['data'], h_i_e, h_f_e, id_ignorar=id_edit):
+                            st.error("Conflito de horário!")
                         else:
-                            atualizar_reserva(id_edit, new_ev, row_edit['origem'], row_edit['numero_sei'], new_st, row_edit['servidor_resp'], str(h_i_e)[:5], str(h_f_e)[:5], row_edit['data'])
+                            atualizar_reserva(id_edit, new_ev, row_edit['origem'], row_edit['numero_sei'], new_st, row_edit['servidor_resp'], h_i_e, h_f_e, row_edit['data'])
                             st.rerun()
                 with st.popover("🗑️ Excluir"):
-                    if st.button("Confirmar", key=f"btn_del_{id_edit}", type="primary"):
-                        conn = get_connection(); c = conn.cursor(); c.execute("DELETE FROM reservas WHERE id=%s", (id_edit,)); conn.commit(); c.close(); conn.close()
+                    confirmar = st.checkbox("Confirmar exclusão definitiva", key=f"check_del_{id_edit}")
+                    if st.button("CONFIRMAR EXCLUSÃO", key=f"btn_del_{id_edit}", disabled=not confirmar, type="primary"):
+                        conn = get_connection(); c = conn.cursor()
+                        c.execute("DELETE FROM reservas WHERE id=%s", (id_edit,))
+                        conn.commit(); c.close(); conn.close()
                         st.rerun()
 
-# --- 4. MAPA SEMANAL NAVEGÁVEL ---
+# --- 4. ABA RESUMO SEMANAL NAVEGÁVEL ---
 def resumo_semanal_navegavel():
     c1, c2, c3 = st.columns([1, 3, 1])
     with c1:
@@ -281,7 +295,7 @@ def resumo_semanal_navegavel():
     df = pd.read_sql_query("SELECT * FROM reservas WHERE status != 'Cancelado' AND sala LIKE 'Sala%'", conn)
     conn.close()
 
-    st.markdown("""<style>.resumo-container { display: flex; flex-direction: column; gap: 12px; width: 100%; }.resumo-row { display: grid; grid-template-columns: 120px 1fr; border-bottom: 1px solid #333; padding: 10px 0; align-items: start; }.resumo-sala { font-weight: bold; color: #fff; font-size: 15px; background: #262730; padding: 10px; border-radius: 8px; text-align: center; border: 1px solid #444; }.resumo-dias { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }.dia-col { min-width: 0; }.dia-header { font-size: 10px; color: #888; text-transform: uppercase; margin-bottom: 6px; text-align: center; font-weight: bold; }.card-container { display: flex; flex-direction: column; gap: 5px; }.event-card { font-size: 10px; padding: 6px; border-radius: 6px; color: white; line-height: 1.2; word-wrap: break-word; font-weight: 600; box-shadow: 2px 2px 5px rgba(0,0,0,0.2); }.vazio { color: #333; font-size: 14px; text-align: center; }</style>""", unsafe_allow_html=True)
+    st.markdown("""<style>.resumo-container { display: flex; flex-direction: column; gap: 12px; width: 100%; }.resumo-row { display: grid; grid-template-columns: 120px 1fr; border-bottom: 1px solid #333; padding: 10px 0; align-items: start; }.resumo-sala { font-weight: bold; color: #fff; font-size: 15px; background: #262730; padding: 10px; border-radius: 8px; text-align: center; border: 1px solid #444; }.resumo-dias { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }.dia-col { min-width: 0; }.dia-header { font-size: 10px; color: #888; text-transform: uppercase; margin-bottom: 6px; text-align: center; font-weight: bold; }.card-container { display: flex; flex-direction: column; gap: 5px; }.event-card { font-size: 10px; padding: 6px; border-radius: 6px; color: white; line-height: 1.2; word-wrap: break-word; font-weight: 600; box-shadow: 2px 2px 5px rgba(0,0,0,0.2); }.vazio { color: #333; font-size: 14px; text-align: center; } @media (max-width: 768px) { .resumo-row { grid-template-columns: 1fr; } .resumo-dias { grid-template-columns: 1fr 1fr; } .resumo-sala { margin-bottom: 10px; background: #2563EB; } }</style>""", unsafe_allow_html=True)
 
     dias_semana_nomes = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"]
     def get_color(origem):
@@ -311,7 +325,7 @@ def resumo_semanal_navegavel():
     st.markdown(html + "</div>", unsafe_allow_html=True)
     
     st.markdown("---")
-    s_det = st.selectbox("Escolha uma sala:", ["Selecione..."] + salas_de_aula_list)
+    s_det = st.selectbox("Consultar Sala específica:", ["Selecione..."] + salas_de_aula_list)
     if s_det != "Selecione...": exibir_tabela(s_det)
 
 # --- EXECUÇÃO ---
@@ -321,4 +335,4 @@ with t2: exibir_tabela("Laboratório de Informática")
 with t3: exibir_tabela("Sala de Reunião")
 with t4: resumo_semanal_navegavel()
 
-st.markdown("<br><p style='text-align: center; color: #6b7280; font-size: 14px;'>🚀 Desenvolvido por <b>Marcos Candido</b></p>", unsafe_allow_html=True)
+st.markdown("<br><p style='text-align: center; color: #6b7280; font-size: 14px;'>🚀 Desenvolvido por <b>Marcos Candido</b> - Projeto de Extensão do Curso de Engenharia de Software</p>", unsafe_allow_html=True)
