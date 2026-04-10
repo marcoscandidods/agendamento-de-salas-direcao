@@ -3,6 +3,8 @@ import sqlite3
 import pandas as pd
 from datetime import datetime, timedelta
 import io
+# Nova biblioteca para o calendário ficar sempre aberto
+from streamlit_calendar import calendar
 
 # --- 1. CONFIGURAÇÃO E BANCO DE DATOS ---
 def init_db():
@@ -99,7 +101,6 @@ if logado:
     st.sidebar.markdown("---")
     st.sidebar.subheader("📝 Novo Agendamento")
     
-    # CAMPOS DINÂMICOS (FORA DO FORM PARA APARECER NA HORA)
     sala_sel = st.sidebar.selectbox("Espaço", todas_as_salas)
     tipo_ag = st.sidebar.radio("Tipo", ["Pontual", "Por Período"])
     
@@ -121,8 +122,8 @@ if logado:
             d_i, d_f, dias = None, None, []
         else:
             c1, c2 = st.columns(2)
-            d_i = c1.date_input("Início")
-            d_f = c2.date_input("Fim")
+            d_i = c1.date_input("Início", format="DD/MM/YYYY")
+            d_f = c2.date_input("Fim", format="DD/MM/YYYY")
             dias = st.multiselect("Dias", ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"])
             data_ev = None
 
@@ -158,7 +159,7 @@ if logado:
                     salvar_reserva(sala_sel, d.strftime('%d/%m/%Y'), str(h_i), str(h_f), evento, ori_final, sei_n, st_sel, servidor)
                 st.rerun()
             else:
-                st.warning("Preencha Finalidade e Servidor.")
+                st.warning("Preencha os campos obrigatórios.")
 
 # --- 3. VISUALIZAÇÃO ---
 def exibir_tabela(n_sala):
@@ -166,14 +167,38 @@ def exibir_tabela(n_sala):
     df = pd.read_sql_query("SELECT * FROM reservas WHERE sala=? ORDER BY data DESC", conn, params=(n_sala,))
     conn.close()
 
-    # --- CALENDÁRIO VISÍVEL NO TOPO ---
+    # --- CALENDÁRIO VISÍVEL NO TOPO (FULL CALENDAR) ---
     st.write(f"📅 **Calendário de Ocupação: {n_sala}**")
-    # Mostra o calendário fixo (o usuário pode navegar pelos meses nele)
-    st.date_input("Consulte os dias ocupados no calendário abaixo:", value=datetime.now(), key=f"cal_fixo_{n_sala}")
+    
+    calendar_events = []
+    if not df.empty:
+        for _, row in df.iterrows():
+            if row['status'] != 'Cancelado':
+                # Converte data para formato ISO para o calendário
+                data_iso = datetime.strptime(row['data'], '%d/%m/%Y').strftime('%Y-%m-%d')
+                calendar_events.append({
+                    "title": f"{row['horario_inicio']} - {row['evento']}",
+                    "start": data_iso,
+                    "end": data_iso,
+                    "color": "#3D5AFE" if row['status'] == 'Confirmado' else "#FFAB00"
+                })
+
+    calendar_options = {
+        "headerToolbar": {
+            "left": "prev,next today",
+            "center": "title",
+            "right": "dayGridMonth,timeGridWeek"
+        },
+        "initialView": "dayGridMonth",
+        "locale": "pt-br",
+    }
+    
+    calendar(events=calendar_events, options=calendar_options, key=f"full_cal_{n_sala}")
+
+    st.markdown("---")
 
     if not df.empty:
         df_display = df.copy()
-        # Status em primeiro, sem ID e sem Solicitante (campo removido conforme pedido)
         df_display = df_display[['status', 'data', 'horario_inicio', 'horario_fim', 'evento', 'origem', 'numero_sei', 'servidor_resp']]
         df_display.columns = ['Status', 'Data', 'Início', 'Fim', 'Descrição', 'Origem', 'Nº SEI', 'Lançado por']
         
