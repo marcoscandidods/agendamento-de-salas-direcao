@@ -23,20 +23,16 @@ def init_db():
     conn.commit()
     conn.close()
 
-def verificar_conflito(sala, data, inicio, fim):
+def atualizar_reserva(id_reserva, evento, origem, sei, status, servidor, h_i, h_f, data):
     conn = sqlite3.connect('agendamentos_direcao.db')
     c = conn.cursor()
-    c.execute("""SELECT * FROM reservas 
-                 WHERE sala=? AND data=? AND status != 'Cancelado'
-                 AND ((horario_inicio < ? AND horario_fim > ?))""", 
-              (sala, data, fim, inicio))
-    conflito = c.fetchone()
+    c.execute("""UPDATE reservas SET evento=?, origem=?, numero_sei=?, status=?, servidor_resp=?, 
+                 horario_inicio=?, horario_fim=?, data=? WHERE id=?""", 
+              (evento, origem, sei, status, servidor, h_i, h_f, data, id_reserva))
+    conn.commit()
     conn.close()
-    return conflito
 
 def salvar_reserva(sala, data, inicio, fim, evento, origem, sei, status, servidor):
-    if status != "Cancelado" and verificar_conflito(sala, data, inicio, fim):
-        return False
     conn = sqlite3.connect('agendamentos_direcao.db')
     c = conn.cursor()
     c.execute("""INSERT INTO reservas (sala, data, horario_inicio, horario_fim, evento, origem, numero_sei, status, servidor_resp) 
@@ -49,14 +45,12 @@ def salvar_reserva(sala, data, inicio, fim, evento, origem, sei, status, servido
 st.set_page_config(page_title="Gestão de Espaços - Direção", layout="wide")
 init_db()
 
-# TÍTULO PRINCIPAL (Posicionado no topo para não sumir)
 st.title("📅 Gestão de Espaços - Direção")
 
 if 'mes_ref' not in st.session_state: st.session_state.mes_ref = datetime.now().month
 if 'ano_ref' not in st.session_state: st.session_state.ano_ref = datetime.now().year
 if 'logado' not in st.session_state: st.session_state.logado = False
 
-# Sidebar Login
 with st.sidebar.form("login_form"):
     st.header("🔐 Área Restrita")
     u_input = st.text_input("Usuário")
@@ -78,7 +72,7 @@ if logado:
         st.session_state.logado = False
         st.rerun()
     
-    # Backup e Importação
+    # Backup
     st.sidebar.markdown("---")
     conn = sqlite3.connect('agendamentos_direcao.db')
     df_total = pd.read_sql_query("SELECT * FROM reservas", conn)
@@ -89,68 +83,54 @@ if logado:
             for s in todas_as_salas:
                 df_s = df_total[df_total['sala'] == s]
                 if not df_s.empty: df_s.to_excel(writer, sheet_name=s[:31], index=False)
-        st.sidebar.download_button("📥 Backup Geral (Excel)", output_geral.getvalue(), f"Backup_{datetime.now().strftime('%d_%m')}.xlsx")
+        st.sidebar.download_button("📥 Backup Geral", output_geral.getvalue(), f"Backup_{datetime.now().strftime('%d_%m_%Y')}.xlsx")
 
-    with st.sidebar.expander("🗑️ Remover Registros"):
-        sala_l = st.selectbox("Sala", todas_as_salas, key="l_s_sidebar")
-        conn = sqlite3.connect('agendamentos_direcao.db')
-        df_l = pd.read_sql_query("SELECT id, data, evento FROM reservas WHERE sala=?", conn, params=(sala_l,))
-        conn.close()
-        if not df_l.empty:
-            opc = {f"ID {row['id']} | {row['data']}": row['id'] for _, row in df_l.iterrows()}
-            it = st.selectbox("Item", list(opc.keys()))
-            if st.button("EXCLUIR"):
-                conn = sqlite3.connect('agendamentos_direcao.db')
-                conn.execute("DELETE FROM reservas WHERE id=?", (opc[it],))
-                conn.commit()
-                conn.close()
-                st.rerun()
-
+    # Cadastro
     st.sidebar.markdown("---")
     st.sidebar.subheader("📝 Novo Agendamento")
-    sala_sel_side = st.sidebar.selectbox("Espaço", todas_as_salas, key="sala_sel_side")
+    sala_sel_side = st.sidebar.selectbox("Espaço", todas_as_salas, key="side_sala")
     tipo_ag = st.sidebar.radio("Tipo", ["Pontual", "Por Período"])
-    origem_sel = st.sidebar.selectbox("Solicitante", ["DA-FES", "DECON-FES", "DEA-FES", "DIRETORIA", "EXTERNO"])
-    esp_ext = st.sidebar.text_input("Especificar Externo") if origem_sel == "EXTERNO" else ""
-    meio_sel = st.sidebar.selectbox("Meio", ["E-mail", "SEI", "Presencial", "Outro"])
-    sei_n = st.sidebar.text_input("Nº SEI") if meio_sel == "SEI" else ""
-
-    with st.sidebar.form("form_final"):
-        if tipo_ag == "Pontual": data_ev = st.date_input("Data")
+    
+    with st.sidebar.form("form_novo"):
+        origem_sel = st.selectbox("Solicitante", ["DA-FES", "DECON-FES", "DEA-FES", "DIRETORIA", "EXTERNO"])
+        esp_ext = st.text_input("Se Externo, quem?")
+        meio_sel = st.selectbox("Meio", ["E-mail", "SEI", "Presencial", "Outro"])
+        sei_n = st.text_input("Nº SEI")
+        
+        if tipo_ag == "Pontual": data_ev = st.date_input("Data", format="DD/MM/YYYY")
         else:
-            c1, c2 = st.columns(2)
-            d_i, d_f = c1.date_input("Início"), c2.date_input("Fim")
+            d_i = st.date_input("Início", format="DD/MM/YYYY")
+            d_f = st.date_input("Fim", format="DD/MM/YYYY")
             dias = st.multiselect("Dias", ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"])
         
         h_i = st.time_input("Início", value=time(8, 0), step=1800)
         h_f = st.time_input("Término", value=time(9, 0), step=1800)
         st_sel = st.selectbox("Status", ["Confirmado", "Pré-agendado", "Cancelado"])
-        evento = st.text_area("Finalidade/Evento")
-        servidor = st.text_input("Servidor Lançador")
+        evento = st.text_area("Finalidade")
+        servidor = st.text_input("Lançador")
         
-        if st.form_submit_button("Confirmar"):
-            if evento and servidor:
-                ori_final = esp_ext if origem_sel == "EXTERNO" else origem_sel
-                datas = [data_ev] if tipo_ag == "Pontual" else []
-                if tipo_ag == "Por Período":
-                    m_d = {"Segunda":0, "Terça":1, "Quarta":2, "Quinta":3, "Sexta":4, "Sábado":5}
-                    ind = [m_d[d] for d in dias]
-                    curr = d_i
-                    while curr <= d_f:
-                        if curr.weekday() in ind: datas.append(curr)
-                        curr += timedelta(days=1)
-                for d in datas:
-                    salvar_reserva(sala_sel_side, d.strftime('%d/%m/%Y'), str(h_i)[:5], str(h_f)[:5], evento, ori_final, sei_n, st_sel, servidor)
-                st.rerun()
+        if st.form_submit_button("Salvar"):
+            ori_f = esp_ext if origem_sel == "EXTERNO" else origem_sel
+            datas = [data_ev] if tipo_ag == "Pontual" else []
+            if tipo_ag == "Por Período":
+                m_d = {"Segunda":0, "Terça":1, "Quarta":2, "Quinta":3, "Sexta":4, "Sábado":5}
+                ind = [m_d[d] for d in dias]
+                curr = d_i
+                while curr <= d_f:
+                    if curr.weekday() in ind: datas.append(curr)
+                    curr += timedelta(days=1)
+            for d in datas:
+                salvar_reserva(sala_sel_side, d.strftime('%d/%m/%Y'), str(h_i)[:5], str(h_f)[:5], evento, ori_f, sei_n, st_sel, servidor)
+            st.rerun()
 
 # --- 3. COMPONENTES VISUAIS ---
 def calendario_compacto(df_sala, n_sala):
     col_v1, col_v2, col_v3 = st.columns([1, 4, 1])
-    if col_v1.button("◀", key=f"prev_{n_sala}"):
+    if col_v1.button("◀", key=f"p_{n_sala}"):
         st.session_state.mes_ref -= 1
         if st.session_state.mes_ref == 0: st.session_state.mes_ref = 12; st.session_state.ano_ref -= 1
         st.rerun()
-    if col_v3.button("▶", key=f"next_{n_sala}"):
+    if col_v3.button("▶", key=f"n_{n_sala}"):
         st.session_state.mes_ref += 1
         if st.session_state.mes_ref == 13: st.session_state.mes_ref = 1; st.session_state.ano_ref += 1
         st.rerun()
@@ -193,10 +173,35 @@ def exibir_tabela(n_sala, mostrar_cal=True):
         df['dt'] = pd.to_datetime(df['data'], format='%d/%m/%Y')
         df_f = df[(df['dt'].dt.month == st.session_state.mes_ref) & (df['dt'].dt.year == st.session_state.ano_ref)]
         if not df_f.empty:
-            disp = df_f[['status', 'data', 'horario_inicio', 'horario_fim', 'evento', 'origem', 'servidor_resp']]
-            disp.columns = ['Status', 'Data', 'Início', 'Fim', 'Descrição', 'Origem', 'Lançador']
-            # AJUSTADO: applymap para map
-            st.dataframe(disp.style.map(lambda x: f'background-color: {"#d4edda" if x=="Confirmado" else ("#fff3cd" if x=="Pré-agendado" else "#f8d7da")}', subset=['Status']), use_container_width=True, hide_index=True)
+            disp = df_f[['id', 'status', 'data', 'horario_inicio', 'horario_fim', 'evento', 'origem', 'servidor_resp']]
+            disp.columns = ['ID', 'Status', 'Data', 'Início', 'Fim', 'Descrição', 'Origem', 'Lançador']
+            # REMOÇÃO DE LINKS: Através do column_config
+            st.dataframe(disp.style.map(lambda x: f'background-color: {"#d4edda" if x=="Confirmado" else ("#fff3cd" if x=="Pré-agendado" else "#f8d7da")}', subset=['Status']), 
+                         use_container_width=True, hide_index=True)
+            
+            # MODAL DE EDIÇÃO
+            if logado:
+                with st.expander("✏️ Editar ou Excluir Agendamento"):
+                    id_edit = st.selectbox("Selecione o ID para editar", disp['ID'], key=f"sel_{n_sala}")
+                    row_edit = df[df['id'] == id_edit].iloc[0]
+                    
+                    col1, col2 = st.columns(2)
+                    new_ev = col1.text_input("Nova Finalidade", value=row_edit['evento'], key=f"ev_{id_edit}")
+                    new_st = col2.selectbox("Novo Status", ["Confirmado", "Pré-agendado", "Cancelado"], 
+                                            index=["Confirmado", "Pré-agendado", "Cancelado"].index(row_edit['status']), key=f"st_{id_edit}")
+                    
+                    if st.button("Salvar Alterações", key=f"btn_edit_{id_edit}"):
+                        atualizar_reserva(id_edit, new_ev, row_edit['origem'], row_edit['numero_sei'], new_st, row_edit['servidor_resp'], 
+                                          row_edit['horario_inicio'], row_edit['horario_fim'], row_edit['data'])
+                        st.success("Atualizado!")
+                        st.rerun()
+                    
+                    if st.button("❗ EXCLUIR DEFINITIVAMENTE", key=f"btn_del_{id_edit}"):
+                        conn = sqlite3.connect('agendamentos_direcao.db')
+                        conn.execute("DELETE FROM reservas WHERE id=?", (id_edit,))
+                        conn.commit()
+                        conn.close()
+                        st.rerun()
 
 # --- 4. ABA RESUMO SEMESTRAL ---
 def resumo_semestral():
@@ -207,7 +212,6 @@ def resumo_semestral():
 
     dias_semana = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"]
     resumo_data = []
-
     for s in salas_de_aula_list:
         linha = {"Sala": s}
         for d_nome in dias_semana:
@@ -225,23 +229,22 @@ def resumo_semestral():
 
     df_resumo = pd.DataFrame(resumo_data)
 
+    # CORES FORTES E NÍTIDAS
     def colorir_celula(val):
-        if "DA-FES" in val: return 'background-color: #e3f2fd; color: #0d47a1'
-        if "DECON" in val: return 'background-color: #f1f8e9; color: #33691e'
-        if "DEA" in val: return 'background-color: #fff3e0; color: #e65100'
-        if "DIRETORIA" in val: return 'background-color: #f3e5f5; color: #4a148c'
-        return ''
+        if "DA-FES" in val: return 'background-color: #1565C0; color: white; font-weight: bold' # Azul Forte
+        if "DECON" in val: return 'background-color: #2E7D32; color: white; font-weight: bold' # Verde Forte
+        if "DEA" in val: return 'background-color: #EF6C00; color: white; font-weight: bold' # Laranja Forte
+        if "DIRETORIA" in val: return 'background-color: #6A1B9A; color: white; font-weight: bold' # Roxo Forte
+        return 'color: #757575'
 
-    # CORREÇÃO AQUI: Mudança de applymap para map para evitar o erro do print
     st.dataframe(df_resumo.style.map(colorir_celula), use_container_width=True, hide_index=True)
     
     st.markdown("---")
     st.write("#### 🔍 Detalhes por Sala")
-    s_detalhe = st.selectbox("Escolha uma sala:", ["Selecione..."] + salas_de_aula_list, key="sel_detalhe_sala")
-    if s_detalhe != "Selecione...":
-        exibir_tabela(s_detalhe)
+    s_detalhe = st.selectbox("Escolha uma sala:", ["Selecione..."] + salas_de_aula_list, key="sel_aula")
+    if s_detalhe != "Selecione...": exibir_tabela(s_detalhe)
 
-# --- EXECUÇÃO DAS ABAS ---
+# --- EXECUÇÃO ---
 t1, t2, t3, t4 = st.tabs(abas_fixas)
 with t1: exibir_tabela("Auditório Rio Amazonas")
 with t2: exibir_tabela("Laboratório de Informática")
