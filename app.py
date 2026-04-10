@@ -123,7 +123,6 @@ if logado:
 
 # --- 3. COMPONENTES VISUAIS ---
 def calendario_compacto(df_sala, n_sala):
-    # Proporção [1, 8, 1] empurra as setas para as extremidades totais
     col_v1, col_v2, col_v3 = st.columns([1, 8, 1])
     
     with col_v1:
@@ -156,19 +155,44 @@ def calendario_compacto(df_sala, n_sala):
                     if dias_ocupados.get(dt.day) != 'Confirmado': dias_ocupados[dt.day] = row['status']
             except: continue
 
-    html_cal = "<table style='width:100%; text-align:center; border-collapse:collapse;'><tr>"
-    for d in ['D','S','T','Q','Q','S','S']: html_cal += f"<th style='font-size:10px; color:gray;'>{d}</th>"
+    # Estilo CSS para garantir bordas uniformes em todas as células
+    html_cal = """
+    <style>
+        .cal-table { width:100%; text-align:center; border-collapse: collapse; table-layout: fixed; }
+        .cal-table th { font-size:12px; color:gray; padding: 5px; }
+        .cal-table td { 
+            border: 1px solid #444 !important; 
+            height: 40px; 
+            font-size: 14px; 
+            font-weight: bold;
+            vertical-align: middle;
+        }
+    </style>
+    """
+    html_cal += "<table class='cal-table'><tr>"
+    for d in ['D','S','T','Q','Q','S','S']: html_cal += f"<th>{d}</th>"
     html_cal += "</tr>"
+    
     for semana in calendar.monthcalendar(ano, mes):
         html_cal += "<tr>"
         for i, dia in enumerate(semana):
-            if dia == 0: html_cal += "<td></td>"
+            if dia == 0: 
+                html_cal += "<td style='border: 1px solid #333 !important;'></td>"
             else:
                 status = dias_ocupados.get(dia)
-                bg = "#2563EB" if status == 'Confirmado' else ("#D97706" if status == 'Pré-agendado' else ("#f3f4f6" if i==0 or i==6 else "transparent"))
-                color = "white" if status in ['Confirmado', 'Pré-agendado'] else "#4b5563"
-                html_cal += f"<td style='background-color:{bg}; color:{color}; border:1px solid #e5e7eb; border-radius:4px; font-size:12px; padding:6px; font-weight:bold;'>{dia}</td>"
+                # Cores de fundo baseadas no status
+                if status == 'Confirmado':
+                    bg, color = "#2563EB", "white"
+                elif status == 'Pré-agendado':
+                    bg, color = "#D97706", "white"
+                else:
+                    # Final de semana (D=0, S=6)
+                    bg = "#1e1e1e" if (i == 0 or i == 6) else "transparent"
+                    color = "#888" if (i == 0 or i == 6) else "#ccc"
+                
+                html_cal += f"<td style='background-color:{bg}; color:{color};'>{dia}</td>"
         html_cal += "</tr>"
+    
     st.markdown(html_cal + "</table>", unsafe_allow_html=True)
 
 def exibir_tabela(n_sala, mostrar_cal=True):
@@ -200,7 +224,6 @@ def exibir_tabela(n_sala, mostrar_cal=True):
                                           row_edit['horario_inicio'], row_edit['horario_fim'], row_edit['data'])
                         st.rerun()
 
-                # Popover de exclusão isolado e com trava de segurança
                 with st.popover("🗑️ Opções de Exclusão"):
                     st.error("⚠️ ZONA DE PERIGO")
                     st.write(f"Você está selecionando o ID: {id_edit}")
