@@ -26,7 +26,6 @@ def init_db():
 def verificar_conflito(sala, data, inicio, fim):
     conn = sqlite3.connect('agendamentos_direcao.db')
     c = conn.cursor()
-    # MUDANÇA: Agora ele só considera conflito se o status NÃO for 'Cancelado'
     c.execute("""SELECT * FROM reservas 
                  WHERE sala=? AND data=? AND status != 'Cancelado'
                  AND ((horario_inicio < ? AND horario_fim > ?))""", 
@@ -86,30 +85,27 @@ if logado:
     # --- MÓDULO DE EXCLUSÃO (LIMPEZA) ---
     st.sidebar.markdown("---")
     with st.sidebar.expander("🗑️ Gerenciar/Remover Registros"):
-        st.write("Use para apagar erros de digitação permanentemente.")
         sala_limpeza = st.selectbox("Sala para limpeza", todas_as_salas)
-        
         conn = sqlite3.connect('agendamentos_direcao.db')
-        df_limpeza = pd.read_sql_query("SELECT id, data, evento FROM reservas WHERE sala=?", conn, params=(sala_limpeza,))
+        df_limp = pd.read_sql_query("SELECT id, data, evento FROM reservas WHERE sala=?", conn, params=(sala_limpeza,))
         conn.close()
         
-        if not df_limpeza.empty:
-            # Cria uma lista de opções legíveis: ID - Data - Evento
-            opcoes_excluir = {f"ID {row['id']} | {row['data']} | {row['evento'][:20]}...": row['id'] for _, row in df_limpeza.iterrows()}
+        if not df_limp.empty:
+            opcoes_excluir = {f"ID {row['id']} | {row['data']} | {row['evento'][:20]}...": row['id'] for _, row in df_limp.iterrows()}
             item_sel = st.selectbox("Selecione o registro para APAGAR", list(opcoes_excluir.keys()))
-            
             if st.button("❗ EXCLUIR PERMANENTEMENTE"):
                 deletar_registro(opcoes_excluir[item_sel])
-                st.sidebar.warning("Registro removido do banco de dados.")
+                st.sidebar.warning("Registro removido.")
                 st.rerun()
         else:
-            st.write("Nenhum registro nesta sala.")
+            st.write("Nenhum registro encontrado.")
 
-    st.warning("**⚠️ AVISO LGPD:** Não insira dados pessoais sensíveis. Use o SEI ou E-mail para detalhes restritos.")
+    st.warning("**⚠️ AVISO LGPD:** As informações são públicas. Use o SEI/E-mail para dados sensíveis.")
     
     st.sidebar.markdown("---")
     tipo_agendamento = st.sidebar.radio("Tipo de Agendamento", ["Pontual", "Por Período (Recorrente)"])
     
+    # --- FORMULÁRIO DE AGENDAMENTO ---
     with st.sidebar.form("form_reserva"):
         sala_sel = st.selectbox("Selecione o Espaço", todas_as_salas)
         if tipo_agendamento == "Pontual":
@@ -127,22 +123,31 @@ if logado:
         conf_cancel = True
         if status_sel == "Cancelado":
             st.error("⚠️ REGISTRO DE CANCELAMENTO")
-            conf_cancel = st.checkbox("Confirmo que este agendamento será marcado como cancelado.")
+            conf_cancel = st.checkbox("Confirmo o cancelamento desta reserva.")
         
         evento = st.text_area("Finalidade/Evento")
         solicitante = st.text_input("Solicitante")
         servidor_resp = st.text_input("Servidor Lançador")
+        
+        # Departamento de Origem (Apenas os Departamentos)
         origem_opc = ["DA-FES", "DECON-FES", "DEA-FES", "DIRETORIA", "EXTERNO"]
         origem_sel = st.selectbox("Departamento de Origem", origem_opc)
-        origem_ext = st.text_input("Se Externo, qual órgão?")
-        sei_num = st.text_input("Nº Processo SEI")
+
+        # Meio ou forma da solicitação (Substituindo o campo Externo antigo)
+        meio_solicitacao = st.selectbox("Meio ou forma da solicitação", ["SEI", "E-mail", "Presencial", "Outro"])
+        
+        # Campo condicional: Só aparece se for SEI
+        sei_num = ""
+        if meio_solicitacao == "SEI":
+            sei_num = st.text_input("Nº Processo SEI")
+            
         btn_salvar = st.form_submit_button("Confirmar Agendamento")
 
     if btn_salvar:
         if status_sel == "Cancelado" and not conf_cancel:
             st.sidebar.error("Confirme o cancelamento.")
         elif evento and solicitante and servidor_resp:
-            ori_final = origem_ext if origem_sel == "EXTERNO" else origem_sel
+            # Lógica de Datas
             datas = [data_evento] if tipo_agendamento == "Pontual" else []
             if tipo_agendamento != "Pontual":
                 mapa = {"Segunda":0, "Terça":1, "Quarta":2, "Quinta":3, "Sexta":4, "Sábado":5}
@@ -154,7 +159,7 @@ if logado:
 
             sucessos = 0
             for d in datas:
-                if salvar_reserva(sala_sel, d.strftime('%d/%m/%Y'), str(h_ini), str(h_fim), evento, solicitante, ori_final, sei_num, status_sel, servidor_resp):
+                if salvar_reserva(sala_sel, d.strftime('%d/%m/%Y'), str(h_ini), str(h_fim), evento, solicitante, origem_sel, sei_num, status_sel, servidor_resp):
                     sucessos += 1
             st.sidebar.success(f"{sucessos} registro(s) salvo(s)!")
             st.rerun()
@@ -166,19 +171,16 @@ else:
 # --- 3. VISUALIZAÇÃO PÚBLICA ---
 def exibir_tabela(nome_sala):
     conn = sqlite3.connect('agendamentos_direcao.db')
-    # Adicionado o ID na visualização pública caso o ADM precise identificar para deletar
     df = pd.read_sql_query("SELECT * FROM reservas WHERE sala=? ORDER BY data DESC, horario_inicio ASC", conn, params=(nome_sala,))
     conn.close()
     
     if not df.empty:
         df_display = df.copy()
         df_display.columns = ['ID', 'Sala', 'Data', 'Início', 'Fim', 'Descrição', 'Solicitante', 'Origem', 'Nº SEI', 'Status', 'Lançado por']
-        
-        # Oculta a coluna 'Sala' já que estamos na aba/seção da sala específica
         df_display = df_display.drop(columns=['Sala'])
         
         cores = {'Confirmado': '#d4edda', 'Pré-agendado': '#fff3cd', 'Cancelado': '#f8d7da'}
-        st.dataframe(df_display.style.applymap(lambda x: f'background-color: {cores.get(x, "#ffffff")}; color: black', subset=['Status']), 
+        st.dataframe(df_display.style.map(lambda x: f'background-color: {cores.get(x, "#ffffff")}; color: black', subset=['Status']), 
                      use_container_width=True, hide_index=True)
         
         if logado:
