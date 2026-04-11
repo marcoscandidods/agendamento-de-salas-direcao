@@ -123,8 +123,9 @@ def login_dialog():
         n_email = st.text_input("E-mail Institucional")
         n_senha = st.text_input("Senha ", type="password")
         if st.button("Finalizar Cadastro"):
-            execute_query("INSERT INTO usuarios (nome, email, senha) VALUES (%s,%s,%s)", (n_nome, n_email, hash_senha(n_senha)), commit=True)
-            st.success("Cadastro realizado! Mude para 'Entrar'.")
+    with st.spinner("Criptografando dados e conectando ao banco..."):
+        execute_query("INSERT INTO usuarios (nome, email, senha) VALUES (%s,%s,%s)", (n_nome, n_email, hash_senha(n_senha)), commit=True)
+    st.success("Cadastro realizado! Mude para 'Entrar'.")
 
 col_t, col_l = st.columns([7, 3])
 with col_t:
