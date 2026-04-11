@@ -305,7 +305,25 @@ def formulario_agendamento():
                         execute_query("INSERT INTO reservas (sala, data, horario_inicio, horario_fim, evento, status, email_solicitante) VALUES (%s,%s,%s,%s,%s,%s,%s)", 
                                      (sala_form, d_str, h_i, h_f, evento_form, st_base, st.session_state.user), commit=True)
                         st.success("Sucesso!"); st.rerun()
+# ==========================================
+# 4. EXECUÇÃO FINAL
+# ==========================================
 
+consultar_vagos()
+formulario_agendamento()
+
+t_aud, t_lab, t_reu, t_salas = st.tabs(abas_fixas)
+
+with t_aud: exibir_tabela("Auditório Rio Amazonas")
+with t_lab: exibir_tabela("Laboratório de Informática")
+with t_reu: exibir_tabela("Sala de Reunião")
+with t_salas:
+    st.subheader("🏫 Gestão de Salas de Aula")
+    sala_foco = st.selectbox("Escolha a Sala:", salas_de_aula_list, index=0)
+    exibir_tabela(sala_foco)
+    st.markdown("---")
+    if st.toggle("Mostrar Resumo Semanal (Mapa Geral)"):
+        resumo_semanal_navegavel()
 # SEU TEXTO DE ISENÇÃO (Obrigatório)
 st.markdown("---")
 st.markdown("""
