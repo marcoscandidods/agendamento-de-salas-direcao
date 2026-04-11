@@ -149,7 +149,7 @@ def login_dialog():
 # --- CABEÇALHO SUPERIOR ---
 col_t, col_l = st.columns([7, 3])
 with col_t:
-    st.title("🏛️ Gestão de Espaços - FES")
+    st.title("📅 Gestão de Espaços - FES")
 with col_l:
     if st.session_state.user:
         st.write(f"Conectado como: **{st.session_state.user}**")
