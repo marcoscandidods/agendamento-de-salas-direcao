@@ -256,29 +256,7 @@ def resumo_semanal_navegavel():
                         cor = "#1e40af" if r['status'] == "Confirmado" else "#D97706"
                         st.markdown(f"<div style='font-size:9px; padding:3px; border-radius:4px; color:white; background:{cor}; margin-bottom:2px;'>{r['horario_inicio']}<br>{r['evento'][:15]}</div>", unsafe_allow_html=True)
 
-# EXECUÇÃO FINAL
-consultar_vagos()
-t1, t2, t3, t4 = st.tabs(abas_fixas)
-with t1: exibir_tabela("Auditório Rio Amazonas")
-with t2: exibir_tabela("Laboratório de Informática")
-with t3: exibir_tabela("Sala de Reunião")
-with t4:
-    st.subheader("🏫 Gestão de Salas de Aula")
-    
-    # Seletor de Sala Individual (Padrão: Sala 1)
-    # salas_de_aula_list[0] é a Sala 1 no seu código
-    sala_foco = st.selectbox("Selecione uma Sala específica para detalhamento:", salas_de_aula_list, index=0) 
-    
-    # Exibe o calendário e a tabela da sala escolhida (Sala 1 por padrão)
-    exibir_tabela(sala_foco)
-    
-    st.markdown("---")
-    
-    # Botão de expansão para não poluir a tela
-    st.write("### 📊 Visão Geral das Salas de Aula")
-    if st.toggle("Mostrar Resumo Semanal de todas as salas"):
-        st.info("💡 Esta visão apresenta a agenda de todas as salas simultaneamente.")
-        resumo_semanal_navegavel()
+
 
 # SEU TEXTO DE ISENÇÃO (Obrigatório)
 st.markdown("---")
