@@ -281,15 +281,17 @@ with t_salas:
     sala_foco = st.selectbox("Escolha a Sala:", salas_de_aula_list, index=0)
     exibir_tabela(sala_foco)
     st.markdown("---")
+# Título do Resumo em Branco e com Fonte Maior
     st.markdown("""
         <style>
             .resumo-label {
-                font-size: 20px !important;
+                font-size: 22px !important;
                 font-weight: bold !important;
-                color: #2563EB;
+                color: #FFFFFF;
+                margin-bottom: -10px;
             }
         </style>
-        <p class="resumo-label">🗓️ Visão Geral das Salas</p>
+        <p class="resumo-label">🗓️ Visão Geral das Salas (Mapa Semanal)</p>
     """, unsafe_allow_html=True)
     
     if st.toggle("Ativar Resumo Semanal (Mapa Geral)"): 
