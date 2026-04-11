@@ -257,14 +257,19 @@ def formulario_agendamento():
                 d_f = st.date_input("Data", format="DD/MM/YYYY")
                 hi_f = st.selectbox("Início", lista_h, index=2)
                 hf_f = st.selectbox("Fim", lista_h, index=4)
-                evento_f = st.text_input("Finalidade")
+                # Lista de Departamentos (Utilizadores)
+                utilizadores = ["DA-FES", "DECON-FES", "DEA-FES", "PROFNIT", "PROFIAP", "PPG-ECO", "PPGADAM", "DIRETORIA", "EXTERNO"]
+                origem_f = st.selectbox("Origem (Departamento)", utilizadores)
+                
+                # Finalidade fixa como "Aulas Regulares"
+                evento_f = "Aulas Regulares"
                 if st.form_submit_button("Salvar Agendamento"):
                     d_str = d_f.strftime('%d/%m/%Y')
                     if lista_h.index(hf_f) <= lista_h.index(hi_f): st.error("Horário inválido!")
                     elif verificar_conflito(sala_f, d_str, hi_f, hf_f): st.error("Conflito de horário!")
                     else:
                         st_b = "Confirmado" if st.session_state.is_admin else "Em Análise"
-                        execute_query("INSERT INTO reservas (sala, data, horario_inicio, horario_fim, evento, status, email_solicitante) VALUES (%s,%s,%s,%s,%s,%s,%s)", (sala_f, d_str, hi_f, hf_f, evento_f, st_b, st.session_state.user), commit=True)
+                        execute_query("INSERT INTO reservas (sala, data, horario_inicio, horario_fim, evento, origem, status, email_solicitante) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)", (sala_f, d_str, hi_f, hf_f, evento_f, origem_f, st_base, st.session_state.user), commit=True)
                         st.success("Sucesso!"); st.rerun()
 
 # ==========================================
