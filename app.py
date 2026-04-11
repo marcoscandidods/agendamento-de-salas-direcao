@@ -270,7 +270,7 @@ def formulario_agendamento():
                     elif verificar_conflito(sala_f, d_str, hi_f, hf_f): st.error("Conflito de horário!")
                     else:
                         st_b = "Confirmado" if st.session_state.is_admin else "Em Análise"
-                        execute_query("INSERT INTO reservas (sala, data, horario_inicio, horario_fim, evento, origem, status, email_solicitante) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)", (sala_f, d_str, hi_f, hf_f, evento_f, origem_f, st_base, st.session_state.user), commit=True)
+                        execute_query("INSERT INTO reservas (sala, data, horario_inicio, horario_fim, evento, origem, status, email_solicitante) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)", (sala_f, d_str, hi_f, hf_f, evento_f, origem_f, st_b, st.session_state.user), commit=True)
                         st.success("Sucesso!"); st.rerun()
 
 # ==========================================
