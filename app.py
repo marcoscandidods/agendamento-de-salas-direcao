@@ -282,7 +282,29 @@ def resumo_semanal_navegavel():
                         cor = "#1e40af" if r['status'] == "Confirmado" else "#D97706"
                         st.markdown(f"<div style='font-size:9px; padding:3px; border-radius:4px; color:white; background:{cor}; margin-bottom:2px;'>{r['horario_inicio']}<br>{r['evento'][:15]}</div>", unsafe_allow_html=True)
 
-
+def formulario_agendamento():
+    """Formulário unificado na lateral para criar agendamentos."""
+    if st.session_state.user:
+        with st.sidebar:
+            st.header("📝 Novo Agendamento")
+            with st.form("form_unificado"):
+                sala_form = st.selectbox("Escolha o Espaço", todas_as_salas)
+                d_form = st.date_input("Data", format="DD/MM/YYYY")
+                h_i = st.selectbox("Início", lista_h, index=2) # 08:00
+                h_f = st.selectbox("Fim", lista_h, index=4)   # 09:00
+                evento_form = st.text_input("Finalidade / Nome do Evento")
+                
+                if st.form_submit_button("Salvar Agendamento"):
+                    d_str = d_form.strftime('%d/%m/%Y')
+                    if lista_h.index(h_f) <= lista_h.index(h_i):
+                        st.error("Horário inválido!")
+                    elif verificar_conflito(sala_form, d_str, h_i, h_f):
+                        st.error("Conflito de horário!")
+                    else:
+                        st_base = "Confirmado" if st.session_state.is_admin else "Em Análise"
+                        execute_query("INSERT INTO reservas (sala, data, horario_inicio, horario_fim, evento, status, email_solicitante) VALUES (%s,%s,%s,%s,%s,%s,%s)", 
+                                     (sala_form, d_str, h_i, h_f, evento_form, st_base, st.session_state.user), commit=True)
+                        st.success("Sucesso!"); st.rerun()
 
 # SEU TEXTO DE ISENÇÃO (Obrigatório)
 st.markdown("---")
