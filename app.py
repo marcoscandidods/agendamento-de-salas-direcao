@@ -232,45 +232,6 @@ def calendario_compacto(df_sala, n_sala):
         html += "</tr>"
     st.markdown(html + "</table>", unsafe_allow_html=True)
 
-def exibir_tabela(n_sala):
-    res = execute_query("SELECT * FROM reservas WHERE sala=%s ORDER BY data DESC", (n_sala,), fetch=True)
-    df = pd.DataFrame(res, columns=['id','sala','data','horario_inicio','horario_fim','evento','origem','numero_sei','status','servidor_resp', 'email_solicitante']) if res else pd.DataFrame()
-    calendario_compacto(df, n_sala)
-    st.markdown("---")
-    
-    if not df.empty:
-        df['dt_obj'] = pd.to_datetime(df['data'], format='%d/%m/%Y')
-        df_f = df[(df['dt_obj'].dt.month == st.session_state.mes_ref) & (df['dt_obj'].dt.year == st.session_state.ano_ref)]
-        if not df_f.empty:
-            disp = df_f[['id', 'status', 'data', 'horario_inicio', 'horario_fim', 'evento', 'origem', 'servidor_resp']].copy()
-            st.dataframe(disp.style.map(lambda x: f'background-color: {"#16a34a" if x=="Confirmado" else ("#ca8a04" if x in ["Pré-agendado", "Em Análise"] else "#dc2626")}; color: white; font-weight: bold', subset=['status']), use_container_width=True, hide_index=True)
-
-    # Lógica de Administração e Agendamento (Protegida)
-    if st.session_state.user:
-        with st.sidebar:
-            st.markdown("---")
-            st.subheader(f"Ações: {n_sala}")
-            if st.session_state.is_admin: # Apenas Secretaria
-                # (Aqui entraria sua lógica original de Editar/Excluir que já existia)
-                st.info("Você tem permissão para aprovar e excluir registros.")
-            
-            # Formulário de solicitação para qualquer logado
-            with st.form(f"form_{n_sala}"):
-                d_r = st.date_input("Data do evento")
-                h_i = st.selectbox("Início", lista_h)
-                h_f = st.selectbox("Fim", lista_h)
-                ev = st.text_input("Finalidade")
-                if st.form_submit_button("Solicitar Agendamento"):
-                    if lista_h.index(h_f) <= lista_h.index(h_i):
-                        st.error("Horário de término inválido.")
-                    elif verificar_conflito(n_sala, d_r.strftime('%d/%m/%Y'), h_i, h_f):
-                        st.error("Já existe uma reserva para este horário.")
-                    else:
-                        stat = "Confirmado" if st.session_state.is_admin else "Em Análise"
-                        execute_query("INSERT INTO reservas (sala, data, horario_inicio, horario_fim, evento, status, email_solicitante) VALUES (%s,%s,%s,%s,%s,%s,%s)", 
-                                     (n_sala, d_r.strftime('%d/%m/%Y'), h_i, h_f, ev, stat, st.session_state.user), commit=True)
-                        st.success("Solicitado com sucesso!")
-                        st.rerun()
 
 def resumo_semanal_navegavel():
     """Seu Mapa Semanal Original (Mantido 100%)"""
