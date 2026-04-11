@@ -301,7 +301,23 @@ t1, t2, t3, t4 = st.tabs(abas_fixas)
 with t1: exibir_tabela("Auditório Rio Amazonas")
 with t2: exibir_tabela("Laboratório de Informática")
 with t3: exibir_tabela("Sala de Reunião")
-with t4: resumo_semanal_navegavel()
+with t4:
+    st.subheader("🏫 Gestão de Salas de Aula")
+    
+    # Seletor de Sala Individual (Padrão: Sala 1)
+    # salas_de_aula_list[0] é a Sala 1 no seu código
+    sala_foco = st.selectbox("Selecione uma Sala específica para detalhamento:", salas_de_aula_list, index=0) 
+    
+    # Exibe o calendário e a tabela da sala escolhida (Sala 1 por padrão)
+    exibir_tabela(sala_foco)
+    
+    st.markdown("---")
+    
+    # Botão de expansão para não poluir a tela
+    st.write("### 📊 Visão Geral do Setor")
+    if st.toggle("Mostrar Resumo Semanal de todas as salas"):
+        st.info("💡 Esta visão ajuda a identificar buracos na agenda de todas as salas simultaneamente.")
+        resumo_semanal_navegavel()
 
 # SEU TEXTO DE ISENÇÃO (Obrigatório)
 st.markdown("---")
