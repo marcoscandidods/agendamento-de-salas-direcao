@@ -314,9 +314,9 @@ with t4:
     st.markdown("---")
     
     # Botão de expansão para não poluir a tela
-    st.write("### 📊 Visão Geral do Setor")
+    st.write("### 📊 Visão Geral das Salas de Aula")
     if st.toggle("Mostrar Resumo Semanal de todas as salas"):
-        st.info("💡 Esta visão ajuda a identificar buracos na agenda de todas as salas simultaneamente.")
+        st.info("💡 Esta visão apresenta a agenda de todas as salas simultaneamente.")
         resumo_semanal_navegavel()
 
 # SEU TEXTO DE ISENÇÃO (Obrigatório)
