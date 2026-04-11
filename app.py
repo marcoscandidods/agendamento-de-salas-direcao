@@ -231,8 +231,34 @@ def calendario_compacto(df_sala, n_sala):
                 html += f"<td style='background-color:{bg}; color:white;'>{dia}</td>"
         html += "</tr>"
     st.markdown(html + "</table>", unsafe_allow_html=True)
-
-
+def exibir_tabela(n_sala):
+    # SQL trazendo as colunas para o DataFrame
+    res = execute_query("SELECT id, status, data, horario_inicio, horario_fim, evento, origem, servidor_resp FROM reservas WHERE sala=%s ORDER BY data DESC", (n_sala,), fetch=True)
+    df = pd.DataFrame(res, columns=['ID', 'Status', 'Data', 'Início', 'Fim', 'Descrição', 'Origem', 'Responsável']) if res else pd.DataFrame()
+    
+    # Prepara DF para o calendário (converte nomes de colunas)
+    df_cal = df.rename(columns={'Status':'status', 'Data':'data'}) if not df.empty else df
+    calendario_compacto(df_cal, n_sala)
+    st.markdown("---")
+    
+    if not df.empty:
+        # Tabela Visual
+        st.dataframe(df.style.map(lambda x: f'background-color: {"#16a34a" if x=="Confirmado" else ("#ca8a04" if x in ["Pré-agendado", "Em Análise"] else "#dc2626")}; color: white; font-weight: bold', subset=['Status']), use_container_width=True, hide_index=True)
+        
+        # ÁREA DE EDIÇÃO (Aparece apenas para Administrador)
+        if st.session_state.is_admin:
+            with st.expander("📝 Editar Status ou Descrição"):
+                id_ed = st.selectbox("Selecione o ID para editar:", df['ID'], key=f"sel_{n_sala}")
+                row = df[df['ID'] == id_ed].iloc[0]
+                
+                c1, c2 = st.columns(2)
+                novo_st = c1.selectbox("Novo Status", ["Confirmado", "Em Análise", "Cancelado"], 
+                                     index=["Confirmado", "Em Análise", "Cancelado"].index(row['Status']), key=f"st_{id_ed}")
+                nova_desc = c2.text_input("Nova Descrição", value=row['Descrição'], key=f"desc_{id_ed}")
+                
+                if st.button("Confirmar Alteração", key=f"btn_{id_ed}"):
+                    execute_query("UPDATE reservas SET status=%s, evento=%s WHERE id=%s", (novo_st, nova_desc, id_ed), commit=True)
+                    st.success("Atualizado!"); st.rerun()
 def resumo_semanal_navegavel():
     """Seu Mapa Semanal Original (Mantido 100%)"""
     c1, c2, c3 = st.columns([1, 3, 1])
