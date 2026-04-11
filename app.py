@@ -280,7 +280,19 @@ with t_salas:
     sala_foco = st.selectbox("Escolha a Sala:", salas_de_aula_list, index=0)
     exibir_tabela(sala_foco)
     st.markdown("---")
-    if st.toggle("Mostrar Resumo Semanal"): resumo_semanal_navegavel()
+    st.markdown("""
+        <style>
+            .resumo-label {
+                font-size: 20px !important;
+                font-weight: bold !important;
+                color: #2563EB;
+            }
+        </style>
+        <p class="resumo-label">🗓️ Visão Geral das Salas</p>
+    """, unsafe_allow_html=True)
+    
+    if st.toggle("Ativar Resumo Semanal (Mapa Geral)"): 
+        resumo_semanal_navegavel()
 
 # SEU TEXTO DE ISENÇÃO (Restaurado Integralmente)
 st.markdown("---")
