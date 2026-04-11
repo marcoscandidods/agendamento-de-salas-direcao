@@ -122,6 +122,7 @@ def login_dialog():
         n_nome = st.text_input("Nome Completo")
         n_email = st.text_input("E-mail Institucional")
         n_senha = st.text_input("Senha ", type="password")
+        vinc = st.selectbox("Vínculo", ["Servidor UFAM", "Aluno UFAM", "Comunidade Externa"])
         if st.button("Finalizar Cadastro"):
             with st.spinner("Criptografando dados e conectando ao banco..."):
                 execute_query("INSERT INTO usuarios (nome, email, senha, vinculo) VALUES (%s,%s,%s,%s)", 
