@@ -8,22 +8,27 @@ import io
 import hashlib
 
 # ==========================================
+# 0. CONFIGURAÇÕES E CONSTANTES
+# ==========================================
+DEPARTAMENTOS = ["DA-FES", "DECON-FES", "DEA-FES", "PROFNIT", "PROFIAP", "PPG-ECO", "PPGADAM", "DIRETORIA", "EXTERNO"]
+
+# ==========================================
 # 1. MODEL & CONTROLLER (Lógica e Estabilidade)
 # ==========================================
 
 @st.cache_resource
 def init_connection_pool():
-    """Mantém conexões vivas para evitar lentidão e quedas do Neon."""
+    """Mantém ligações vivas para evitar lentidão e quedas do banco."""
     try:
         return psycopg2.pool.SimpleConnectionPool(1, 15, st.secrets["DB_URL"])
     except Exception as e:
-        st.error(f"Erro ao conectar ao banco: {e}")
+        st.error(f"Erro ao ligar ao banco: {e}")
         return None
 
 db_pool = init_connection_pool()
 
 def execute_query(query, params=None, fetch=False, commit=False):
-    """Executa SQL de forma segura usando o Pool de conexões."""
+    """Executa SQL de forma segura usando o Pool de ligações."""
     conn = db_pool.getconn()
     try:
         with conn.cursor() as cursor:
@@ -53,7 +58,7 @@ def init_db():
         execute_query("INSERT INTO lista_salas (nome_sala) VALUES (%s) ON CONFLICT DO NOTHING", (s,), commit=True)
 
 def hash_senha(senha):
-    """Criptografa a senha para segurança."""
+    """Criptografa a palavra-passe para segurança."""
     return hashlib.sha256(senha.encode()).hexdigest()
 
 def verificar_conflito(sala, data, inicio, fim, id_ignorar=None):
@@ -81,10 +86,12 @@ def verificar_conflito(sala, data, inicio, fim, id_ignorar=None):
 # 2. VIEW - CONFIGURAÇÕES E LOGIN MODAL
 # ==========================================
 
-st.set_page_config(page_title="Gestão de Espaços - Direção", layout="wide")
+st.set_page_config(page_title="Gestão de Espaços - FES", layout="wide")
 init_db()
 
+# Inicialização de variáveis de sessão
 if 'user' not in st.session_state: st.session_state.user = None
+if 'user_dept' not in st.session_state: st.session_state.user_dept = None
 if 'is_admin' not in st.session_state: st.session_state.is_admin = False
 if 'mes_ref' not in st.session_state: st.session_state.mes_ref = datetime.now().month
 if 'ano_ref' not in st.session_state: st.session_state.ano_ref = datetime.now().year
@@ -102,32 +109,35 @@ def login_dialog():
     aba_log, aba_cad = st.tabs(["Entrar", "Criar Conta"])
     with aba_log:
         email_log = st.text_input("E-mail")
-        senha_log = st.text_input("Senha", type="password")
+        senha_log = st.text_input("Palavra-passe", type="password")
         if st.button("Fazer Login"):
             if "LOGIN_USER" in st.secrets and email_log == st.secrets["LOGIN_USER"] and senha_log == st.secrets["LOGIN_PWD"]:
                 st.session_state.user = "Administrador"
                 st.session_state.is_admin = True
+                st.session_state.user_dept = "DIRETORIA"
                 st.rerun()
             else:
-                res = execute_query("SELECT nome, perfil FROM usuarios WHERE email=%s AND senha=%s", 
-                                   (email_log, hash_senha(senha_log)), fetch=True)
+                # Selecionando o vínculo para carregar o departamento automaticamente
+                res = execute_query("SELECT nome, perfil, vinculo FROM usuarios WHERE email=%s AND senha=%s", 
+                                    (email_log, hash_senha(senha_log)), fetch=True)
                 if res:
                     st.session_state.user = res[0][0]
                     st.session_state.is_admin = (res[0][1] == 'admin')
+                    st.session_state.user_dept = res[0][2]
                     st.rerun()
                 else:
-                    st.error("E-mail ou senha incorretos.")
+                    st.error("E-mail ou palavra-passe incorretos.")
 
     with aba_cad:
         n_nome = st.text_input("Nome Completo")
         n_email = st.text_input("E-mail Institucional")
-        n_senha = st.text_input("Senha ", type="password")
-        vinc = st.selectbox("Vínculo", ["Servidor UFAM", "Aluno UFAM", "Comunidade Externa"])
-        if st.button("Finalizar Cadastro"):
-            with st.spinner("Criptografando dados e conectando ao banco..."):
+        n_senha = st.text_input("Palavra-passe ", type="password")
+        vinc = st.selectbox("Departamento / Origem", DEPARTAMENTOS)
+        if st.button("Finalizar Registo"):
+            with st.spinner("A guardar dados..."):
                 execute_query("INSERT INTO usuarios (nome, email, senha, vinculo) VALUES (%s,%s,%s,%s)", 
                              (n_nome, n_email, hash_senha(n_senha), vinc), commit=True)
-            st.success("✅ Cadastro realizado! Agora você pode mudar para a aba 'Entrar'.")
+            st.success("✅ Registo realizado! Agora podes entrar.")
 
 col_t, col_l = st.columns([7, 3])
 with col_t:
@@ -135,12 +145,14 @@ with col_t:
 with col_l:
     if st.session_state.user:
         st.write(f"Olá, **{st.session_state.user}**")
+        st.caption(f"Dep: {st.session_state.user_dept}")
         if st.button("Sair"):
             st.session_state.user = None
             st.session_state.is_admin = False
+            st.session_state.user_dept = None
             st.rerun()
     else:
-        if st.button("🔑 Entrar / Cadastrar"):
+        if st.button("🔑 Entrar / Registar"):
             login_dialog()
 
 # ==========================================
@@ -159,8 +171,8 @@ def consultar_vagos():
                 st.error("Erro: O término deve ser após o início.")
             else:
                 q = """SELECT nome_sala FROM lista_salas WHERE nome_sala NOT IN 
-                       (SELECT sala FROM reservas WHERE data=%s AND status!='Cancelado' 
-                        AND NOT (horario_fim<=%s OR horario_inicio>=%s))"""
+                        (SELECT sala FROM reservas WHERE data=%s AND status!='Cancelado' 
+                         AND NOT (horario_fim<=%s OR horario_inicio>=%s))"""
                 res = execute_query(q, (d_busca.strftime('%d/%m/%Y'), h_i, h_f), fetch=True)
                 livres = [r[0] for r in res] if res else []
                 if livres: st.success(f"Livres: {', '.join(livres)}")
@@ -186,14 +198,13 @@ def calendario_compacto(df_sala, n_sala):
         for _, r in df_sala.iterrows():
             if r['status'] == 'Cancelado': continue
             try:
-                # Usa 'data' e não 'Data' devido ao rename feito na função exibir_tabela
                 dt = datetime.strptime(r['data'], '%d/%m/%Y')
                 if dt.year == st.session_state.ano_ref and dt.month == st.session_state.mes_ref:
                     dia = dt.day
                     if dia not in dias_ocup:
                         dias_ocup[dia] = {'m': False, 't': False, 'n': False}
                     
-                    # Horários para detectar o turno
+                    # Horários para detectar o turno (Início e Fim vêm da tabela de reservas)
                     h_i = datetime.strptime(r['Início'], '%H:%M').time()
                     h_f = datetime.strptime(r['Fim'], '%H:%M').time()
                     
@@ -208,14 +219,14 @@ def calendario_compacto(df_sala, n_sala):
         .cal-table { width:100%; text-align:center; border-collapse: collapse; table-layout: fixed; }
         .cal-table th { color: gray; font-size: 11px; padding-bottom: 5px; }
         .cal-table td { 
-            border: 1px solid #333; height: 48px; vertical-align: top; 
+            border: 1px solid #333; height: 50px; vertical-align: top; 
             position: relative; padding-top: 5px; font-size: 14px; font-weight: bold;
         }
         .indicator-container {
-            position: absolute; bottom: 3px; left: 0; width: 100%;
-            display: flex; flex-direction: column; gap: 1.5px; padding: 0 4px;
+            position: absolute; bottom: 4px; left: 0; width: 100%;
+            display: flex; flex-direction: column; gap: 2px; padding: 0 4px;
         }
-        .bar { height: 3px; border-radius: 1px; width: 100%; }
+        .bar { height: 3.5px; border-radius: 2px; width: 100%; }
         .bar-m { background-color: #3b82f6; } /* Azul - Manhã */
         .bar-t { background-color: #10b981; } /* Verde - Tarde */
         .bar-n { background-color: #f59e0b; } /* Laranja - Noite */
@@ -244,9 +255,9 @@ def calendario_compacto(df_sala, n_sala):
     st.markdown(html + "</table>", unsafe_allow_html=True)
     st.markdown("""
     <div style='display: flex; gap: 15px; font-size: 11px; justify-content: center; margin-top: 10px; color: #aaa;'>
-        <div><span style='color: #3b82f6;'>●</span> Manhã</div>
-        <div><span style='color: #10b981;'>●</span> Tarde</div>
-        <div><span style='color: #f59e0b;'>●</span> Noite</div>
+        <div><span style='color: #3b82f6;'>●</span> Manhã (08-12h)</div>
+        <div><span style='color: #10b981;'>●</span> Tarde (12-18h)</div>
+        <div><span style='color: #f59e0b;'>●</span> Noite (18-22h)</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -295,7 +306,7 @@ def resumo_semanal_navegavel():
                         st.markdown(f"<div style='font-size:8px; padding:2px; border-radius:3px; background:{cor}; color:white;'>{r['hi']}-{r['hf']}</div>", unsafe_allow_html=True)
 
 def formulario_agendamento():
-    """Formulário lateral fixo para qualquer sala."""
+    """Formulário lateral fixo com Origem Automática baseada no departamento do perfil."""
     if st.session_state.user:
         with st.sidebar:
             st.header("📝 Novo Agendamento")
@@ -304,11 +315,17 @@ def formulario_agendamento():
                 d_f = st.date_input("Data", format="DD/MM/YYYY")
                 hi_f = st.selectbox("Início", lista_h, index=2)
                 hf_f = st.selectbox("Fim", lista_h, index=4)
-                # Lista de Departamentos (Utilizadores)
-                utilizadores = ["DA-FES", "DECON-FES", "DEA-FES", "PROFNIT", "PROFIAP", "PPG-ECO", "PPGADAM", "DIRETORIA", "EXTERNO"]
-                origem_f = st.selectbox("Origem (Departamento)", utilizadores)
                 
-                # Finalidade fixa como "Aulas Regulares"
+                # Preenchimento automático da origem baseado no departamento do utilizador
+                if st.session_state.is_admin:
+                    # Admin pode escolher qualquer departamento se necessário
+                    origem_f = st.selectbox("Origem (Departamento)", DEPARTAMENTOS, 
+                                          index=DEPARTAMENTOS.index(st.session_state.user_dept) if st.session_state.user_dept in DEPARTAMENTOS else 0)
+                else:
+                    # Utilizador comum usa o seu departamento fixo
+                    origem_f = st.session_state.user_dept
+                    st.info(f"Origem automática: **{origem_f}**")
+                
                 evento_f = "Aulas Regulares"
                 if st.form_submit_button("Salvar Agendamento"):
                     d_str = d_f.strftime('%d/%m/%Y')
@@ -334,7 +351,6 @@ with t_salas:
     sala_foco = st.selectbox("Escolha a Sala:", salas_de_aula_list, index=0)
     exibir_tabela(sala_foco)
     st.markdown("---")
-# Título do Resumo em Branco e com Fonte Maior
     st.markdown("""
         <style>
             .resumo-label {
@@ -350,17 +366,12 @@ with t_salas:
     if st.toggle("Ativar Resumo Semanal (Mapa Geral)"): 
         resumo_semanal_navegavel()
 
-# SEU TEXTO DE ISENÇÃO (Restaurado Integralmente)
+# SEU TEXTO DE ISENÇÃO
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #6b7280; font-size: 13px; line-height: 1.6;'>
     <p>🚀 <b>Desenvolvido voluntariamente por Marcos Candido</b></p>
-    <p>Este software é uma ferramenta acadêmica experimental de apoio administrativo, desenvolvida como parte de um 
-    <b>Projeto de Extensão do Curso de Engenharia de Software</b> para fins estritamente acadêmicos e sem fins lucrativos.</p>
-    <p style='font-style: italic;'>
-        O sistema é fornecido "como está", sem garantias de suporte técnico ou disponibilidade contínua, 
-        operando integralmente em serviços de nuvem gratuitos (GitHub, Streamlit e Neon). 
-        O desenvolvedor não se responsabiliza por limitações dessas plataformas ou pela integridade permanente dos dados.
-    </p>
+    <p>Este software é uma ferramenta académica experimental de apoio administrativo, desenvolvida como parte de um 
+    <b>Projeto de Extensão do Curso de Engenharia de Software</b> para fins estritamente académicos e sem fins lucrativos.</p>
 </div>
 """, unsafe_allow_html=True)
