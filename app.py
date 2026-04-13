@@ -127,7 +127,7 @@ def login_dialog():
                     st.error("E-mail ou password incorretos.")
 
     with aba_cad:
-        st.info("⚠️ **Atenção:** Apenas e-mails institucionais (**@ufam.edu.br**) são permitidos para registo.")
+        st.info("⚠️ **Atenção:** Apenas e-mails institucionais (**@ufam.edu.br**) são permitidos para registro.")
         n_nome = st.text_input("Nome Completo")
         n_email = st.text_input("E-mail Institucional (exemplo@ufam.edu.br)")
         n_senha = st.text_input("Password", type="password")
@@ -141,7 +141,7 @@ def login_dialog():
                 with st.spinner("A guardar dados..."):
                     execute_query("INSERT INTO usuarios (nome, email, senha, vinculo) VALUES (%s,%s,%s,%s)", 
                                  (n_nome, n_email, hash_senha(n_senha), vinc), commit=True)
-                st.success("✅ Registo realizado! Agora pode entrar.")
+                st.success("✅ Registro realizado! Agora pode entrar.")
 
 # Ajuste da coluna de login
 col_t, col_l = st.columns([4, 1])
@@ -157,7 +157,7 @@ with col_l:
             st.session_state.user_dept = None
             st.rerun()
     else:
-        if st.button("🔑 Entrar / Registar", use_container_width=True):
+        if st.button("🔑 Entrar / Registrar", use_container_width=True):
             login_dialog()
 
 # ==========================================
