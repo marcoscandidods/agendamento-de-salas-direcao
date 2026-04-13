@@ -18,17 +18,17 @@ DEPARTAMENTOS = ["DA-FES", "DECON-FES", "DEA-FES", "PROFNIT", "PROFIAP", "PPG-EC
 
 @st.cache_resource
 def init_connection_pool():
-    """Mantém ligações vivas para evitar lentidão e quedas do banco."""
+    """Mantém conexões vivas para evitar lentidão e quedas do banco."""
     try:
         return psycopg2.pool.SimpleConnectionPool(1, 15, st.secrets["DB_URL"])
     except Exception as e:
-        st.error(f"Erro ao ligar ao banco: {e}")
+        st.error(f"Erro ao conectar ao banco: {e}")
         return None
 
 db_pool = init_connection_pool()
 
 def execute_query(query, params=None, fetch=False, commit=False):
-    """Executa SQL de forma segura usando o Pool de ligações."""
+    """Executa SQL de forma segura usando o Pool de conexões."""
     conn = db_pool.getconn()
     try:
         with conn.cursor() as cursor:
@@ -58,11 +58,11 @@ def init_db():
         execute_query("INSERT INTO lista_salas (nome_sala) VALUES (%s) ON CONFLICT DO NOTHING", (s,), commit=True)
 
 def hash_senha(senha):
-    """Criptografa a palavra-passe para segurança."""
+    """Criptografa a senha para segurança."""
     return hashlib.sha256(senha.encode()).hexdigest()
 
 def verificar_conflito(sala, data, inicio, fim, id_ignorar=None):
-    """Verificar se já existe reserva no horário."""
+    """Verifica se já existe reserva no horário."""
     query = "SELECT horario_inicio, horario_fim FROM reservas WHERE sala=%s AND data=%s AND status != 'Cancelado'"
     params = [sala, data]
     if id_ignorar:
@@ -109,7 +109,7 @@ def login_dialog():
     aba_log, aba_cad = st.tabs(["Entrar", "Criar Conta"])
     with aba_log:
         email_log = st.text_input("E-mail")
-        senha_log = st.text_input("Palavra-passe", type="password")
+        senha_log = st.text_input("Senha", type="password")
         if st.button("Fazer Login"):
             if "LOGIN_USER" in st.secrets and email_log == st.secrets["LOGIN_USER"] and senha_log == st.secrets["LOGIN_PWD"]:
                 st.session_state.user = "Administrador"
@@ -117,7 +117,6 @@ def login_dialog():
                 st.session_state.user_dept = "DIRETORIA"
                 st.rerun()
             else:
-                # Selecionando o vínculo para carregar o departamento automaticamente
                 res = execute_query("SELECT nome, perfil, vinculo FROM usuarios WHERE email=%s AND senha=%s", 
                                     (email_log, hash_senha(senha_log)), fetch=True)
                 if res:
@@ -131,13 +130,13 @@ def login_dialog():
     with aba_cad:
         n_nome = st.text_input("Nome Completo")
         n_email = st.text_input("E-mail Institucional")
-        n_senha = st.text_input("Palavra-passe ", type="password")
+        n_senha = st.text_input("Senha ", type="password")
         vinc = st.selectbox("Departamento / Origem", DEPARTAMENTOS)
-        if st.button("Finalizar Registo"):
-            with st.spinner("A guardar dados..."):
+        if st.button("Finalizar Cadastro"):
+            with st.spinner("Salvando dados..."):
                 execute_query("INSERT INTO usuarios (nome, email, senha, vinculo) VALUES (%s,%s,%s,%s)", 
                              (n_nome, n_email, hash_senha(n_senha), vinc), commit=True)
-            st.success("✅ Registro realizado com sucesso!")
+            st.success("✅ Cadastro realizado! Agora você pode entrar.")
 
 col_t, col_l = st.columns([7, 3])
 with col_t:
@@ -145,14 +144,14 @@ with col_t:
 with col_l:
     if st.session_state.user:
         st.write(f"Olá, **{st.session_state.user}**")
-        st.caption(f"Dep: {st.session_state.user_dept}")
+        st.caption(f"Departamento: {st.session_state.user_dept}")
         if st.button("Sair"):
             st.session_state.user = None
             st.session_state.is_admin = False
             st.session_state.user_dept = None
             st.rerun()
     else:
-        if st.button("🔑 Entrar / Registar"):
+        if st.button("🔑 Entrar / Cadastrar"):
             login_dialog()
 
 # ==========================================
@@ -306,7 +305,7 @@ def resumo_semanal_navegavel():
                         st.markdown(f"<div style='font-size:8px; padding:2px; border-radius:3px; background:{cor}; color:white;'>{r['hi']}-{r['hf']}</div>", unsafe_allow_html=True)
 
 def formulario_agendamento():
-    """Formulário lateral fixo com Origem Automática baseada no departamento do perfil."""
+    """Formulário lateral fixo com Origem Automática e campo para Evento."""
     if st.session_state.user:
         with st.sidebar:
             st.header("📝 Novo Agendamento")
@@ -316,21 +315,27 @@ def formulario_agendamento():
                 hi_f = st.selectbox("Início", lista_h, index=2)
                 hf_f = st.selectbox("Fim", lista_h, index=4)
                 
-                # Preenchimento automático da origem baseado no departamento do utilizador
+                # Preenchimento automático da origem baseado no departamento do usuário
                 if st.session_state.is_admin:
-                    # Admin pode escolher qualquer departamento se necessário
+                    # Admin pode escolher qualquer departamento
                     origem_f = st.selectbox("Origem (Departamento)", DEPARTAMENTOS, 
                                           index=DEPARTAMENTOS.index(st.session_state.user_dept) if st.session_state.user_dept in DEPARTAMENTOS else 0)
                 else:
-                    # Utilizador comum usa o seu departamento fixo
+                    # Usuário comum tem o seu departamento fixo do perfil
                     origem_f = st.session_state.user_dept
-                    st.info(f"Origem: **{origem_f}**")
+                    st.info(f"Origem automática: **{origem_f}**")
                 
-                evento_f = "Aulas Regulares"
+                # Novo campo para o nome do Evento (Descrição)
+                evento_f = st.text_input("Evento / Descrição", placeholder="Ex: Aula de Economia")
+
                 if st.form_submit_button("Salvar Agendamento"):
                     d_str = d_f.strftime('%d/%m/%Y')
-                    if lista_h.index(hf_f) <= lista_h.index(hi_f): st.error("Horário inválido!")
-                    elif verificar_conflito(sala_f, d_str, hi_f, hf_f): st.error("Conflito de horário!")
+                    if not evento_f:
+                        st.error("Por favor, preencha a descrição do evento.")
+                    elif lista_h.index(hf_f) <= lista_h.index(hi_f):
+                        st.error("Horário inválido!")
+                    elif verificar_conflito(sala_f, d_str, hi_f, hf_f):
+                        st.error("Conflito de horário!")
                     else:
                         st_b = "Confirmado" if st.session_state.is_admin else "Em Análise"
                         execute_query("INSERT INTO reservas (sala, data, horario_inicio, horario_fim, evento, origem, status, email_solicitante) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)", (sala_f, d_str, hi_f, hf_f, evento_f, origem_f, st_b, st.session_state.user), commit=True)
@@ -371,7 +376,7 @@ st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #6b7280; font-size: 13px; line-height: 1.6;'>
     <p>🚀 <b>Desenvolvido voluntariamente por Marcos Candido</b></p>
-    <p>Este software é uma ferramenta académica experimental de apoio administrativo, desenvolvida como parte de um 
-    <b>Projeto de Extensão do Curso de Engenharia de Software</b> para fins estritamente académicos e sem fins lucrativos.</p>
+    <p>Este software é uma ferramenta acadêmica experimental de apoio administrativo, desenvolvida como parte de um 
+    <b>Projeto de Extensão do Curso de Engenharia de Software</b> para fins estritamente acadêmicos e sem fins lucrativos.</p>
 </div>
 """, unsafe_allow_html=True)
