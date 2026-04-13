@@ -324,7 +324,7 @@ def formulario_agendamento():
                 else:
                     # Utilizador comum usa o seu departamento fixo
                     origem_f = st.session_state.user_dept
-                    st.info(f"Origem automática: **{origem_f}**")
+                    st.info(f"Origem: **{origem_f}**")
                 
                 evento_f = "Aulas Regulares"
                 if st.form_submit_button("Salvar Agendamento"):
