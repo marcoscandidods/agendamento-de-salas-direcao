@@ -255,9 +255,9 @@ def calendario_compacto(df_sala, n_sala):
     st.markdown(html + "</table>", unsafe_allow_html=True)
     st.markdown("""
     <div style='display: flex; gap: 15px; font-size: 11px; justify-content: center; margin-top: 10px; color: #aaa;'>
-        <div><span style='color: #3b82f6;'>●</span> Manhã (08-12h)</div>
-        <div><span style='color: #10b981;'>●</span> Tarde (12-18h)</div>
-        <div><span style='color: #f59e0b;'>●</span> Noite (18-22h)</div>
+        <div><span style='color: #3b82f6;'>●</span> Manhã </div>
+        <div><span style='color: #10b981;'>●</span> Tarde </div>
+        <div><span style='color: #f59e0b;'>●</span> Noite </div>
     </div>
     """, unsafe_allow_html=True)
 
