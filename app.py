@@ -89,7 +89,6 @@ def verificar_conflito(sala, data, inicio, fim, id_ignorar=None):
 st.set_page_config(page_title="Gestão de Espaços - FES", layout="wide")
 init_db()
 
-# Inicialização de variáveis de sessão
 if 'user' not in st.session_state: st.session_state.user = None
 if 'user_dept' not in st.session_state: st.session_state.user_dept = None
 if 'is_admin' not in st.session_state: st.session_state.is_admin = False
@@ -130,7 +129,7 @@ def login_dialog():
     with aba_cad:
         n_nome = st.text_input("Nome Completo")
         n_email = st.text_input("E-mail Institucional")
-        n_senha = st.text_input("Senha ", type="password")
+        n_senha = st.text_input("Senha", type="password")
         vinc = st.selectbox("Departamento / Origem", DEPARTAMENTOS)
         if st.button("Finalizar Cadastro"):
             with st.spinner("Salvando dados..."):
@@ -158,6 +157,46 @@ with col_l:
 # 3. FUNCIONALIDADES E CALENDÁRIOS
 # ==========================================
 
+def avisos_admin():
+    """Mostra alertas de agendamentos pendentes para o Admin."""
+    if st.session_state.is_admin:
+        res = execute_query("SELECT COUNT(*) FROM reservas WHERE status = 'Em Análise'", fetch=True)
+        count = res[0][0] if res else 0
+        if count > 0:
+            st.warning(f"🔔 **Aviso Administrativo:** Existem **{count}** agendamentos aguardando análise.")
+
+def area_backup_restauracao():
+    """Ferramentas de Backup e Importação para Admin."""
+    if st.session_state.is_admin:
+        with st.expander("💾 Ferramentas de Dados (Backup / Importação)"):
+            c1, c2 = st.columns(2)
+            
+            # Exportação
+            with c1:
+                st.write("📤 **Exportar Backup**")
+                res = execute_query("SELECT * FROM reservas", fetch=True)
+                if res:
+                    df_back = pd.DataFrame(res, columns=['id', 'sala', 'data', 'inicio', 'fim', 'evento', 'origem', 'sei', 'status', 'resp', 'email'])
+                    csv = df_back.to_csv(index=False).encode('utf-8')
+                    st.download_button("Baixar Planilha CSV", data=csv, file_name=f"backup_reservas_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
+            
+            # Importação
+            with c2:
+                st.write("📥 **Restaurar Banco**")
+                uploaded_file = st.file_uploader("Subir planilha de backup (CSV)", type="csv")
+                if uploaded_file:
+                    try:
+                        df_import = pd.read_csv(uploaded_file)
+                        if st.button("Confirmar Importação de Dados"):
+                            for _, row in df_import.iterrows():
+                                execute_query("""INSERT INTO reservas (sala, data, horario_inicio, horario_fim, evento, origem, numero_sei, status, servidor_resp, email_solicitante) 
+                                               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""", 
+                                               (row['sala'], row['data'], row['inicio'], row['fim'], row['evento'], row['origem'], row.get('sei', ''), row['status'], row.get('resp', ''), row.get('email', '')), commit=True)
+                            st.success("Dados restaurados com sucesso!")
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao ler arquivo: {e}")
+
 def consultar_vagos():
     """Busca rápida de salas livres."""
     with st.expander("🔍 Consultar salas disponíveis"):
@@ -179,18 +218,24 @@ def consultar_vagos():
 
 def calendario_compacto(df_sala, n_sala):
     """Desenho do calendário com indicadores de barras coloridas (Estilo Android)."""
-    col1, col2, col3 = st.columns([1, 8, 1])
-    if col1.button("◀", key=f"p_{n_sala}"):
-        st.session_state.mes_ref -= 1
-        if st.session_state.mes_ref == 0: st.session_state.mes_ref = 12; st.session_state.ano_ref -= 1
-        st.rerun()
-    if col3.button("▶", key=f"n_{n_sala}"):
-        st.session_state.mes_ref += 1
-        if st.session_state.mes_ref == 13: st.session_state.mes_ref = 1; st.session_state.ano_ref += 1
-        st.rerun()
+    # Ajuste das colunas para alinhamento das setas nas pontas
+    c_seta_esq, c_espaco, c_titulo, c_espaco2, c_seta_dir = st.columns([0.5, 3, 3, 3, 0.5])
+    
+    with c_seta_esq:
+        if st.button("◀", key=f"p_{n_sala}"):
+            st.session_state.mes_ref -= 1
+            if st.session_state.mes_ref == 0: st.session_state.mes_ref = 12; st.session_state.ano_ref -= 1
+            st.rerun()
+    
+    with c_seta_dir:
+        if st.button("▶", key=f"n_{n_sala}"):
+            st.session_state.mes_ref += 1
+            if st.session_state.mes_ref == 13: st.session_state.mes_ref = 1; st.session_state.ano_ref += 1
+            st.rerun()
     
     meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
-    st.markdown(f"<p style='text-align:center; font-weight:bold; font-size:18px;'>{meses[st.session_state.mes_ref-1]} / {st.session_state.ano_ref}</p>", unsafe_allow_html=True)
+    with c_titulo:
+        st.markdown(f"<p style='text-align:center; font-weight:bold; font-size:18px; margin-top:5px;'>{meses[st.session_state.mes_ref-1]} / {st.session_state.ano_ref}</p>", unsafe_allow_html=True)
     
     dias_ocup = {}
     if not df_sala.empty:
@@ -203,11 +248,9 @@ def calendario_compacto(df_sala, n_sala):
                     if dia not in dias_ocup:
                         dias_ocup[dia] = {'m': False, 't': False, 'n': False}
                     
-                    # Horários para detectar o turno (Início e Fim vêm da tabela de reservas)
                     h_i = datetime.strptime(r['Início'], '%H:%M').time()
                     h_f = datetime.strptime(r['Fim'], '%H:%M').time()
                     
-                    # Manhã: 08:00 - 12:00 | Tarde: 12:00 - 18:00 | Noite: 18:00 - 22:00
                     if h_i < time(12, 0) and h_f > time(8, 0): dias_ocup[dia]['m'] = True
                     if h_i < time(18, 0) and h_f > time(12, 0): dias_ocup[dia]['t'] = True
                     if h_i < time(22, 0) and h_f > time(18, 0): dias_ocup[dia]['n'] = True
@@ -226,9 +269,7 @@ def calendario_compacto(df_sala, n_sala):
             display: flex; flex-direction: column; gap: 2px; padding: 0 4px;
         }
         .bar { height: 3.5px; border-radius: 2px; width: 100%; }
-        .bar-m { background-color: #3b82f6; } /* Azul - Manhã */
-        .bar-t { background-color: #10b981; } /* Verde - Tarde */
-        .bar-n { background-color: #f59e0b; } /* Laranja - Noite */
+        .bar-m { background-color: #3b82f6; } .bar-t { background-color: #10b981; } .bar-n { background-color: #f59e0b; }
         .weekend { background-color: #1e1e1e; }
     </style>
     <table class='cal-table'><tr>
@@ -252,25 +293,26 @@ def calendario_compacto(df_sala, n_sala):
                 html += f"<td class='{classe_td}'>{content}</td>"
         html += "</tr>"
     st.markdown(html + "</table>", unsafe_allow_html=True)
-    st.markdown("""
-    <div style='display: flex; gap: 15px; font-size: 11px; justify-content: center; margin-top: 10px; color: #aaa;'>
-        <div><span style='color: #3b82f6;'>●</span> Manhã </div>
-        <div><span style='color: #10b981;'>●</span> Tarde </div>
-        <div><span style='color: #f59e0b;'>●</span> Noite </div>
-    </div>
-    """, unsafe_allow_html=True)
 
 def exibir_tabela(n_sala):
-    """Exibe a tabela e a opção de edição para Admin."""
+    """Exibe a tabela e oculta 'Responsável' para usuários não logados."""
     res = execute_query("SELECT id, status, data, horario_inicio, horario_fim, evento, origem, servidor_resp FROM reservas WHERE sala=%s ORDER BY data DESC", (n_sala,), fetch=True)
     df = pd.DataFrame(res, columns=['ID', 'Status', 'Data', 'Início', 'Fim', 'Descrição', 'Origem', 'Responsável']) if res else pd.DataFrame()
     
+    # Gerar calendário
     df_cal = df.rename(columns={'Status':'status', 'Data':'data'}) if not df.empty else df
     calendario_compacto(df_cal, n_sala)
     st.markdown("---")
     
     if not df.empty:
-        st.dataframe(df.style.map(lambda x: f'background-color: {"#16a34a" if x=="Confirmado" else ("#ca8a04" if x in ["Pré-agendado", "Em Análise"] else "#dc2626")}; color: white; font-weight: bold', subset=['Status']), use_container_width=True, hide_index=True)
+        # Lógica de Ocultação: Responsável só aparece se estiver logado
+        cols_mostrar = ['ID', 'Status', 'Data', 'Início', 'Fim', 'Descrição', 'Origem']
+        if st.session_state.user:
+            cols_mostrar.append('Responsável')
+        
+        df_display = df[cols_mostrar]
+        
+        st.dataframe(df_display.style.map(lambda x: f'background-color: {"#16a34a" if x=="Confirmado" else ("#ca8a04" if x in ["Pré-agendado", "Em Análise"] else "#dc2626")}; color: white; font-weight: bold', subset=['Status']), use_container_width=True, hide_index=True)
         
         if st.session_state.is_admin:
             with st.expander("📝 Editar Agendamento (Admin)"):
@@ -315,23 +357,20 @@ def formulario_agendamento():
                 hi_f = st.selectbox("Início", lista_h, index=2)
                 hf_f = st.selectbox("Fim", lista_h, index=4)
                 
-                # Preenchimento automático da origem baseado no departamento do usuário
                 if st.session_state.is_admin:
-                    # Admin pode escolher qualquer departamento
                     origem_f = st.selectbox("Origem (Departamento)", DEPARTAMENTOS, 
                                           index=DEPARTAMENTOS.index(st.session_state.user_dept) if st.session_state.user_dept in DEPARTAMENTOS else 0)
                 else:
-                    # Usuário comum tem o seu departamento fixo do perfil
                     origem_f = st.session_state.user_dept
                     st.info(f"Origem automática: **{origem_f}**")
                 
-                # Novo campo para o nome do Evento (Descrição)
-                evento_f = st.text_input("Evento / Descrição", placeholder="Ex: Aula de Economia")
+                # Campo de Evento correspondente à Descrição na tabela
+                evento_f = st.text_input("Evento / Descrição", placeholder="Ex: Seminário de Gestão")
 
                 if st.form_submit_button("Salvar Agendamento"):
                     d_str = d_f.strftime('%d/%m/%Y')
                     if not evento_f:
-                        st.error("Por favor, preencha a descrição do evento.")
+                        st.error("Por favor, preencha o nome do Evento.")
                     elif lista_h.index(hf_f) <= lista_h.index(hi_f):
                         st.error("Horário inválido!")
                     elif verificar_conflito(sala_f, d_str, hi_f, hf_f):
@@ -339,14 +378,17 @@ def formulario_agendamento():
                     else:
                         st_b = "Confirmado" if st.session_state.is_admin else "Em Análise"
                         execute_query("INSERT INTO reservas (sala, data, horario_inicio, horario_fim, evento, origem, status, email_solicitante) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)", (sala_f, d_str, hi_f, hf_f, evento_f, origem_f, st_b, st.session_state.user), commit=True)
-                        st.success("Sucesso!"); st.rerun()
+                        st.success("Agendamento enviado!"); st.rerun()
 
 # ==========================================
 # 4. EXECUÇÃO FINAL
 # ==========================================
 
+avisos_admin() # Alertas para o Admin logo no topo
+area_backup_restauracao() # Ferramentas de dados
 consultar_vagos()
 formulario_agendamento()
+
 t_aud, t_lab, t_reu, t_salas = st.tabs(abas_fixas)
 with t_aud: exibir_tabela("Auditório Rio Amazonas")
 with t_lab: exibir_tabela("Laboratório de Informática")
@@ -356,27 +398,21 @@ with t_salas:
     sala_foco = st.selectbox("Escolha a Sala:", salas_de_aula_list, index=0)
     exibir_tabela(sala_foco)
     st.markdown("---")
-    st.markdown("""
-        <style>
-            .resumo-label {
-                font-size: 22px !important;
-                font-weight: bold !important;
-                color: #FFFFFF;
-                margin-bottom: -10px;
-            }
-        </style>
-        <p class="resumo-label">🗓️ Visão Geral das Salas (Mapa Semanal)</p>
-    """, unsafe_allow_html=True)
-    
+    st.markdown("<p style='font-size: 22px; font-weight: bold; color: #FFFFFF;'>🗓️ Visão Geral (Mapa Semanal)</p>", unsafe_allow_html=True)
     if st.toggle("Ativar Resumo Semanal (Mapa Geral)"): 
         resumo_semanal_navegavel()
 
-# SEU TEXTO DE ISENÇÃO
+# TEXTO DE ISENÇÃO 
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #6b7280; font-size: 13px; line-height: 1.6;'>
     <p>🚀 <b>Desenvolvido voluntariamente por Marcos Candido</b></p>
     <p>Este software é uma ferramenta acadêmica experimental de apoio administrativo, desenvolvida como parte de um 
     <b>Projeto de Extensão do Curso de Engenharia de Software</b> para fins estritamente acadêmicos e sem fins lucrativos.</p>
+    <p style='font-style: italic;'>
+        O sistema é fornecido "como está", sem garantias de suporte técnico ou disponibilidade contínua, 
+        operando integralmente em serviços de nuvem gratuitos (GitHub, Streamlit e Neon). 
+        O desenvolvedor não se responsabiliza por limitações dessas plataformas ou pela integridade permanente dos dados.
+    </p>
 </div>
 """, unsafe_allow_html=True)
