@@ -18,17 +18,17 @@ DEPARTAMENTOS = ["DA-FES", "DECON-FES", "DEA-FES", "PROFNIT", "PROFIAP", "PPG-EC
 
 @st.cache_resource
 def init_connection_pool():
-    """Mantém conexões vivas para evitar lentidão e quedas do banco."""
+    """Mantém ligações vivas para evitar lentidão e quedas do banco."""
     try:
         return psycopg2.pool.SimpleConnectionPool(1, 15, st.secrets["DB_URL"])
     except Exception as e:
-        st.error(f"Erro ao conectar ao banco: {e}")
+        st.error(f"Erro ao ligar ao banco: {e}")
         return None
 
 db_pool = init_connection_pool()
 
 def execute_query(query, params=None, fetch=False, commit=False):
-    """Executa SQL de forma segura usando o Pool de conexões."""
+    """Executa SQL de forma segura usando o Pool de ligações."""
     conn = db_pool.getconn()
     try:
         with conn.cursor() as cursor:
@@ -58,7 +58,7 @@ def init_db():
         execute_query("INSERT INTO lista_salas (nome_sala) VALUES (%s) ON CONFLICT DO NOTHING", (s,), commit=True)
 
 def hash_senha(senha):
-    """Criptografa a senha para segurança."""
+    """Criptografa a password para segurança."""
     return hashlib.sha256(senha.encode()).hexdigest()
 
 def verificar_conflito(sala, data, inicio, fim, id_ignorar=None):
@@ -79,7 +79,7 @@ def verificar_conflito(sala, data, inicio, fim, id_ignorar=None):
     for ex_i_str, ex_f_str in agendamentos:
         ex_i = datetime.strptime(ex_i_str, format_h).time()
         ex_f = datetime.strptime(ex_f_str, format_h).time()
-        if novo_i < ex_f and novo_f > i: return True 
+        if novo_i < ex_f and novo_f > ex_i: return True 
     return False
 
 # ==========================================
@@ -108,7 +108,7 @@ def login_dialog():
     aba_log, aba_cad = st.tabs(["Entrar", "Criar Conta"])
     with aba_log:
         email_log = st.text_input("E-mail")
-        senha_log = st.text_input("Senha", type="password")
+        senha_log = st.text_input("Password", type="password")
         if st.button("Fazer Login"):
             if "LOGIN_USER" in st.secrets and email_log == st.secrets["LOGIN_USER"] and senha_log == st.secrets["LOGIN_PWD"]:
                 st.session_state.user = "Administrador"
@@ -124,24 +124,24 @@ def login_dialog():
                     st.session_state.user_dept = res[0][2]
                     st.rerun()
                 else:
-                    st.error("E-mail ou senha incorretos.")
+                    st.error("E-mail ou password incorretos.")
 
     with aba_cad:
-        st.info("⚠️ **Atenção:** Somente e-mails institucionais (**@ufam.edu.br**) são permitidos para cadastro.")
+        st.info("⚠️ **Atenção:** Apenas e-mails institucionais (**@ufam.edu.br**) são permitidos para registo.")
         n_nome = st.text_input("Nome Completo")
         n_email = st.text_input("E-mail Institucional (exemplo@ufam.edu.br)")
-        n_senha = st.text_input("Senha", type="password")
+        n_senha = st.text_input("Password", type="password")
         vinc = st.selectbox("Departamento / Origem", DEPARTAMENTOS)
-        if st.button("Finalizar Cadastro"):
+        if st.button("Finalizar Registo"):
             if not n_email.lower().strip().endswith("@ufam.edu.br"):
-                st.error("❌ Erro: Você deve utilizar um e-mail institucional @ufam.edu.br")
+                st.error("❌ Erro: Deve utilizar um e-mail institucional @ufam.edu.br")
             elif not n_nome or not n_senha:
                 st.error("❌ Erro: Preencha todos os campos.")
             else:
-                with st.spinner("Salvando dados..."):
+                with st.spinner("A guardar dados..."):
                     execute_query("INSERT INTO usuarios (nome, email, senha, vinculo) VALUES (%s,%s,%s,%s)", 
                                  (n_nome, n_email, hash_senha(n_senha), vinc), commit=True)
-                st.success("✅ Cadastro realizado! Agora você pode entrar.")
+                st.success("✅ Registo realizado! Agora pode entrar.")
 
 # Ajuste da coluna de login
 col_t, col_l = st.columns([4, 1])
@@ -157,7 +157,7 @@ with col_l:
             st.session_state.user_dept = None
             st.rerun()
     else:
-        if st.button("🔑 Entrar / Cadastrar", use_container_width=True):
+        if st.button("🔑 Entrar / Registar", use_container_width=True):
             login_dialog()
 
 # ==========================================
@@ -170,7 +170,7 @@ def avisos_admin():
         res = execute_query("SELECT COUNT(*) FROM reservas WHERE status = 'Em Análise'", fetch=True)
         count = res[0][0] if res else 0
         if count > 0:
-            st.warning(f"🔔 **Aviso Administrativo:** Existem **{count}** agendamentos aguardando análise.")
+            st.warning(f"🔔 **Aviso Administrativo:** Existem **{count}** agendamentos a aguardar análise.")
 
 def area_backup_restauracao():
     """Ferramentas de Backup e Importação para Admin."""
@@ -184,11 +184,11 @@ def area_backup_restauracao():
                 if res:
                     df_back = pd.DataFrame(res, columns=['id', 'sala', 'data', 'inicio', 'fim', 'evento', 'origem', 'sei', 'status', 'resp', 'email'])
                     csv = df_back.to_csv(index=False).encode('utf-8')
-                    st.download_button("Baixar Planilha CSV", data=csv, file_name=f"backup_reservas_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
+                    st.download_button("Descarregar Folha CSV", data=csv, file_name=f"backup_reservas_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
             
             with c2:
-                st.write("📥 **Restaurar Banco**")
-                uploaded_file = st.file_uploader("Subir planilha de backup (CSV)", type="csv")
+                st.write("📥 **Restaurar Base de Dados**")
+                uploaded_file = st.file_uploader("Carregar folha de backup (CSV)", type="csv")
                 if uploaded_file:
                     try:
                         df_import = pd.read_csv(uploaded_file)
@@ -200,13 +200,13 @@ def area_backup_restauracao():
                             st.success("Dados restaurados com sucesso!")
                             st.rerun()
                     except Exception as e:
-                        st.error(f"Erro ao ler arquivo: {e}")
+                        st.error(f"Erro ao ler ficheiro: {e}")
 
 def consultar_vagos():
     """Busca rápida de salas livres."""
     with st.expander("🔍 Consultar salas disponíveis"):
         c1, c2, c3 = st.columns(3)
-        d_busca = c1.date_input("Data desejada", format="DD/MM/YYYY")
+        d_busca = c1.date_input("Data pretendida", format="DD/MM/YYYY")
         h_i = c2.selectbox("Horário Início", lista_h, key="hib")
         h_f = c3.selectbox("Horário Fim", lista_h, key="hfb")
         if st.button("Verificar Disponibilidade"):
@@ -260,6 +260,7 @@ def calendario_compacto(df_sala, n_sala):
                     if h_i < time(22, 0) and h_f > time(18, 0): dias_ocup[dia]['n'] = True
             except: continue
 
+    # NOVAS CORES DE OCUPAÇÃO: Indigo, Ciano e Rubi (Diferentes do status)
     html = """
     <style>
         .cal-table { width:100%; text-align:center; border-collapse: collapse; table-layout: fixed; }
@@ -274,7 +275,9 @@ def calendario_compacto(df_sala, n_sala):
             display: flex; flex-direction: column; gap: 2px; padding: 0 4px;
         }
         .bar { height: 3.5px; border-radius: 2px; width: 100%; }
-        .bar-m { background-color: #3b82f6; } .bar-t { background-color: #10b981; } .bar-n { background-color: #f59e0b; }
+        .bar-m { background-color: #6366f1; } /* Indigo */
+        .bar-t { background-color: #06b6d4; } /* Ciano */
+        .bar-n { background-color: #e11d48; } /* Rubi */
         .weekend { background-color: rgba(128, 128, 128, 0.1); }
     </style>
     <table class='cal-table'><tr>
@@ -300,7 +303,7 @@ def calendario_compacto(df_sala, n_sala):
     st.markdown(html + "</table>", unsafe_allow_html=True)
 
 def exibir_tabela(n_sala):
-    """Exibe a tabela filtrada por mês e oculta 'Responsável' para usuários não logados."""
+    """Exibe a tabela filtrada por mês e oculta 'Responsável' para utilizadores não logados."""
     res = execute_query("SELECT id, status, data, horario_inicio, horario_fim, evento, origem, servidor_resp, email_solicitante FROM reservas WHERE sala=%s ORDER BY data DESC", (n_sala,), fetch=True)
     df_raw = pd.DataFrame(res, columns=['ID', 'Status', 'Data', 'Início', 'Fim', 'Descrição', 'Origem', 'Responsável', 'Dono']) if res else pd.DataFrame()
     
@@ -316,17 +319,20 @@ def exibir_tabela(n_sala):
     df_cal = df.rename(columns={'Status':'status', 'Data':'data'}) if not df.empty else df
     calendario_compacto(df_cal, n_sala)
     
-    # REINCLUSÃO DA LEGENDA (Ajuste solicitado)
+    # AJUSTE: LEGENDA DE OCUPAÇÃO (Com cores diferentes do status)
     st.markdown("""
-    <div style='display: flex; justify-content: center; gap: 25px; margin-top: -5px; margin-bottom: 10px;'>
-        <div style='display: flex; align-items: center; gap: 8px; font-size: 13px; color: #6b7280;'>
-            <div style='width: 12px; height: 4px; background: #3b82f6; border-radius: 2px;'></div> Manhã
-        </div>
-        <div style='display: flex; align-items: center; gap: 8px; font-size: 13px; color: #6b7280;'>
-            <div style='width: 12px; height: 4px; background: #10b981; border-radius: 2px;'></div> Tarde
-        </div>
-        <div style='display: flex; align-items: center; gap: 8px; font-size: 13px; color: #6b7280;'>
-            <div style='width: 12px; height: 4px; background: #f59e0b; border-radius: 2px;'></div> Noite
+    <div style='display: flex; flex-direction: column; align-items: center; margin-top: -5px; margin-bottom: 10px;'>
+        <p style='font-size: 12px; font-weight: bold; color: #6b7280; margin-bottom: 5px;'>Legenda: Ocupação por Turno</p>
+        <div style='display: flex; justify-content: center; gap: 25px;'>
+            <div style='display: flex; align-items: center; gap: 8px; font-size: 13px; color: #6b7280;'>
+                <div style='width: 12px; height: 4px; background: #6366f1; border-radius: 2px;'></div> Manhã
+            </div>
+            <div style='display: flex; align-items: center; gap: 8px; font-size: 13px; color: #6b7280;'>
+                <div style='width: 12px; height: 4px; background: #06b6d4; border-radius: 2px;'></div> Tarde
+            </div>
+            <div style='display: flex; align-items: center; gap: 8px; font-size: 13px; color: #6b7280;'>
+                <div style='width: 12px; height: 4px; background: #e11d48; border-radius: 2px;'></div> Noite
+            </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -356,12 +362,12 @@ def exibir_tabela(n_sala):
         elif st.session_state.user:
             minhas_reservas = df[df['Dono'] == st.session_state.user]
             if not minhas_reservas.empty:
-                with st.expander("🗑️ Minhas Solicitações (Excluir)"):
-                    st.caption("Você pode excluir apenas os agendamentos realizados por você.")
-                    id_del = st.selectbox("Selecione sua solicitação para excluir:", minhas_reservas['ID'], key=f"del_user_{n_sala}")
-                    if st.button("Excluir Solicitação", key=f"btn_del_{id_del}", type="primary"):
+                with st.expander("🗑️ Minhas Solicitações (Apagar)"):
+                    st.caption("Pode apagar apenas os agendamentos realizados por si.")
+                    id_del = st.selectbox("Selecione a sua solicitação para apagar:", minhas_reservas['ID'], key=f"del_user_{n_sala}")
+                    if st.button("Apagar Solicitação", key=f"btn_del_{id_del}", type="primary"):
                         execute_query("DELETE FROM reservas WHERE id=%s", (id_del,), commit=True)
-                        st.success("Solicitação excluída!"); st.rerun()
+                        st.success("Solicitação apagada!"); st.rerun()
     else:
         st.info("Nenhum agendamento encontrado para este mês.")
 
@@ -406,7 +412,7 @@ def formulario_agendamento():
                 
                 evento_f = st.text_input("Evento / Descrição", placeholder="Ex: Seminário de Gestão")
 
-                if st.form_submit_button("Salvar Agendamento"):
+                if st.form_submit_button("Guardar Agendamento"):
                     d_str = d_f.strftime('%d/%m/%Y')
                     if not evento_f:
                         st.error("Por favor, preencha o nome do Evento.")
@@ -446,12 +452,12 @@ st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #6b7280; font-size: 13px; line-height: 1.6;'>
     <p>🚀 <b>Desenvolvido voluntariamente por Marcos Candido</b></p>
-    <p>Este software é uma ferramenta acadêmica experimental de apoio administrativo, desenvolvida como parte de um 
-    <b>Projeto de Extensão do Curso de Engenharia de Software</b> para fins estritamente acadêmicos e sem fins lucrativos.</p>
+    <p>Este software é uma ferramenta académica experimental de apoio administrativo, desenvolvida como parte de um 
+    <b>Projeto de Extensão do Curso de Engenharia de Software</b> para fins estritamente académicos e sem fins lucrativos.</p>
     <p style='font-style: italic;'>
         O sistema é fornecido "como está", sem garantias de suporte técnico ou disponibilidade contínua, 
         operando integralmente em serviços de nuvem gratuitos (GitHub, Streamlit e Neon). 
-        O desenvolvedor não se responsabiliza por limitações dessas plataformas ou pela integridade permanente dos dados.
+        O programador não se responsabiliza por limitações dessas plataformas ou pela integridade permanente dos dados.
     </p>
 </div>
 """, unsafe_allow_html=True)
