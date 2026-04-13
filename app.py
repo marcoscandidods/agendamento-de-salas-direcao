@@ -79,7 +79,7 @@ def verificar_conflito(sala, data, inicio, fim, id_ignorar=None):
     for ex_i_str, ex_f_str in agendamentos:
         ex_i = datetime.strptime(ex_i_str, format_h).time()
         ex_f = datetime.strptime(ex_f_str, format_h).time()
-        if novo_i < ex_f and novo_f > ex_i: return True 
+        if novo_i < ex_f and novo_f > x_i: return True 
     return False
 
 # ==========================================
@@ -136,7 +136,7 @@ def login_dialog():
             if not n_email.lower().strip().endswith("@ufam.edu.br"):
                 st.error("❌ Erro: Você deve utilizar um e-mail institucional @ufam.edu.br")
             elif not n_nome or not n_senha:
-                st.error("❌ Erve: Preencha todos os campos.")
+                st.error("❌ Erro: Preencha todos os campos.")
             else:
                 with st.spinner("Salvando dados..."):
                     execute_query("INSERT INTO usuarios (nome, email, senha, vinculo) VALUES (%s,%s,%s,%s)", 
@@ -304,9 +304,19 @@ def exibir_tabela(n_sala):
     """Exibe a tabela e oculta 'Responsável' para usuários não logados."""
     # Alterada a query para incluir email_solicitante para controle de exclusão
     res = execute_query("SELECT id, status, data, horario_inicio, horario_fim, evento, origem, servidor_resp, email_solicitante FROM reservas WHERE sala=%s ORDER BY data DESC", (n_sala,), fetch=True)
-    df = pd.DataFrame(res, columns=['ID', 'Status', 'Data', 'Início', 'Fim', 'Descrição', 'Origem', 'Responsável', 'Dono']) if res else pd.DataFrame()
+    df_raw = pd.DataFrame(res, columns=['ID', 'Status', 'Data', 'Início', 'Fim', 'Descrição', 'Origem', 'Responsável', 'Dono']) if res else pd.DataFrame()
     
-    # Gerar calendário
+    # AJUSTE: Filtrar para mostrar apenas o mês visível no calendário para não sobrecarregar a tela
+    df = df_raw.copy()
+    if not df.empty:
+        df['dt_temp'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce')
+        df = df[
+            (df['dt_temp'].dt.month == st.session_state.mes_ref) & 
+            (df['dt_temp'].dt.year == st.session_state.ano_ref)
+        ]
+        df = df.drop(columns=['dt_temp'])
+
+    # Gerar calendário (usamos o df_raw para garantir que barras apareçam mesmo se o filtro de tabela mudar, mas aqui o foco é o mês atual)
     df_cal = df.rename(columns={'Status':'status', 'Data':'data'}) if not df.empty else df
     calendario_compacto(df_cal, n_sala)
     st.markdown("---")
@@ -333,9 +343,8 @@ def exibir_tabela(n_sala):
                     execute_query("UPDATE reservas SET status=%s, evento=%s WHERE id=%s", (novo_st, nova_desc, id_ed), commit=True)
                     st.success("Atualizado!"); st.rerun()
 
-        # ÁREA NOVA: Exclusão para Usuário Comum (Apenas as dele)
+        # ÁREA DE EXCLUSÃO: Exclusão para Usuário Comum (Apenas as dele)
         elif st.session_state.user:
-            # Filtra apenas os agendamentos onde o Dono (email_solicitante) é o usuário logado
             minhas_reservas = df[df['Dono'] == st.session_state.user]
             if not minhas_reservas.empty:
                 with st.expander("🗑️ Minhas Solicitações (Excluir)"):
@@ -344,6 +353,8 @@ def exibir_tabela(n_sala):
                     if st.button("Excluir Solicitação", key=f"btn_del_{id_del}", type="primary"):
                         execute_query("DELETE FROM reservas WHERE id=%s", (id_del,), commit=True)
                         st.success("Solicitação excluída!"); st.rerun()
+    else:
+        st.info("Nenhum agendamento encontrado para este mês.")
 
 def resumo_semanal_navegavel():
     """Visão Geral de todas as salas de aula."""
