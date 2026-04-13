@@ -62,7 +62,7 @@ def hash_senha(senha):
     return hashlib.sha256(senha.encode()).hexdigest()
 
 def verificar_conflito(sala, data, inicio, fim, id_ignorar=None):
-    """Verifica se já existe reserva no horário."""
+    """Verificar se já existe reserva no horário."""
     query = "SELECT horario_inicio, horario_fim FROM reservas WHERE sala=%s AND data=%s AND status != 'Cancelado'"
     params = [sala, data]
     if id_ignorar:
@@ -126,7 +126,7 @@ def login_dialog():
                     st.session_state.user_dept = res[0][2]
                     st.rerun()
                 else:
-                    st.error("E-mail ou palavra-passe incorretos.")
+                    st.error("E-mail ou senha incorretos.")
 
     with aba_cad:
         n_nome = st.text_input("Nome Completo")
@@ -137,7 +137,7 @@ def login_dialog():
             with st.spinner("A guardar dados..."):
                 execute_query("INSERT INTO usuarios (nome, email, senha, vinculo) VALUES (%s,%s,%s,%s)", 
                              (n_nome, n_email, hash_senha(n_senha), vinc), commit=True)
-            st.success("✅ Registo realizado! Agora podes entrar.")
+            st.success("✅ Registro realizado com sucesso!")
 
 col_t, col_l = st.columns([7, 3])
 with col_t:
