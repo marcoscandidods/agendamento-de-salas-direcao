@@ -79,7 +79,7 @@ def verificar_conflito(sala, data, inicio, fim, id_ignorar=None):
     for ex_i_str, ex_f_str in agendamentos:
         ex_i = datetime.strptime(ex_i_str, format_h).time()
         ex_f = datetime.strptime(ex_f_str, format_h).time()
-        if novo_i < ex_f and novo_f > x_i: return True 
+        if novo_i < ex_f and novo_f > ex_i: return True 
     return False
 
 # ==========================================
@@ -223,7 +223,7 @@ def consultar_vagos():
                 else: st.error("Nenhuma sala disponível.")
 
 def calendario_compacto(df_sala, n_sala):
-    """Desenho do calendário com indicadores de barras coloridas (Estilo Android)."""
+    """Desenho do calendário adaptativo para modo claro e escuro."""
     # Ajuste das colunas para alinhamento das setas nas pontas
     c_seta_esq, c_espaco, c_titulo, c_espaco2, c_seta_dir = st.columns([0.5, 3, 3, 3, 0.5])
     
@@ -262,12 +262,14 @@ def calendario_compacto(df_sala, n_sala):
                     if h_i < time(22, 0) and h_f > time(18, 0): dias_ocup[dia]['n'] = True
             except: continue
 
+    # CSS Ajustado com transparência (RGBA) para funcionar em Light e Dark mode
     html = """
     <style>
         .cal-table { width:100%; text-align:center; border-collapse: collapse; table-layout: fixed; }
-        .cal-table th { color: gray; font-size: 11px; padding-bottom: 5px; }
+        .cal-table th { color: #888; font-size: 11px; padding-bottom: 5px; }
         .cal-table td { 
-            border: 1px solid #333; height: 50px; vertical-align: top; 
+            border: 1px solid rgba(128, 128, 128, 0.3); 
+            height: 50px; vertical-align: top; 
             position: relative; padding-top: 5px; font-size: 14px; font-weight: bold;
         }
         .indicator-container {
@@ -276,7 +278,7 @@ def calendario_compacto(df_sala, n_sala):
         }
         .bar { height: 3.5px; border-radius: 2px; width: 100%; }
         .bar-m { background-color: #3b82f6; } .bar-t { background-color: #10b981; } .bar-n { background-color: #f59e0b; }
-        .weekend { background-color: #1e1e1e; }
+        .weekend { background-color: rgba(128, 128, 128, 0.1); }
     </style>
     <table class='cal-table'><tr>
     """
@@ -301,12 +303,11 @@ def calendario_compacto(df_sala, n_sala):
     st.markdown(html + "</table>", unsafe_allow_html=True)
 
 def exibir_tabela(n_sala):
-    """Exibe a tabela e oculta 'Responsável' para usuários não logados."""
-    # Alterada a query para incluir email_solicitante para controle de exclusão
+    """Exibe a tabela filtrada por mês e oculta 'Responsável' para usuários não logados."""
     res = execute_query("SELECT id, status, data, horario_inicio, horario_fim, evento, origem, servidor_resp, email_solicitante FROM reservas WHERE sala=%s ORDER BY data DESC", (n_sala,), fetch=True)
     df_raw = pd.DataFrame(res, columns=['ID', 'Status', 'Data', 'Início', 'Fim', 'Descrição', 'Origem', 'Responsável', 'Dono']) if res else pd.DataFrame()
     
-    # AJUSTE: Filtrar para mostrar apenas o mês visível no calendário para não sobrecarregar a tela
+    # Filtrar para mostrar apenas o mês visível no calendário
     df = df_raw.copy()
     if not df.empty:
         df['dt_temp'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce')
@@ -316,7 +317,7 @@ def exibir_tabela(n_sala):
         ]
         df = df.drop(columns=['dt_temp'])
 
-    # Gerar calendário (usamos o df_raw para garantir que barras apareçam mesmo se o filtro de tabela mudar, mas aqui o foco é o mês atual)
+    # Gerar calendário
     df_cal = df.rename(columns={'Status':'status', 'Data':'data'}) if not df.empty else df
     calendario_compacto(df_cal, n_sala)
     st.markdown("---")
@@ -362,7 +363,7 @@ def resumo_semanal_navegavel():
     if c1.button("◀ Semana Anterior"): st.session_state.data_mapa_ref -= timedelta(days=7); st.rerun()
     if c3.button("Próxima Semana ▶"): st.session_state.data_mapa_ref += timedelta(days=7); st.rerun()
     seg = st.session_state.data_mapa_ref
-    st.markdown(f"<div style='text-align:center; background:#1e1e1e; padding:10px; border-radius:10px;'>Semana: {seg.strftime('%d/%m')} a {(seg+timedelta(days=5)).strftime('%d/%m/%Y')}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='text-align:center; background:rgba(128,128,128,0.1); padding:10px; border-radius:10px;'>Semana: {seg.strftime('%d/%m')} a {(seg+timedelta(days=5)).strftime('%d/%m/%Y')}</div>", unsafe_allow_html=True)
     res = execute_query("SELECT id, sala, data, horario_inicio, horario_fim, evento, status FROM reservas WHERE status != 'Cancelado' AND sala LIKE 'Sala%'", fetch=True)
     df = pd.DataFrame(res, columns=['id','sala','data','hi','hf', 'evento', 'status']) if res else pd.DataFrame()
     d_s = [(seg + timedelta(days=i)).strftime('%d/%m/%Y') for i in range(6)]
@@ -430,7 +431,7 @@ with t_salas:
     sala_foco = st.selectbox("Escolha a Sala:", salas_de_aula_list, index=0)
     exibir_tabela(sala_foco)
     st.markdown("---")
-    st.markdown("<p style='font-size: 22px; font-weight: bold; color: #FFFFFF;'>🗓️ Visão Geral (Mapa Semanal)</p>", unsafe_allow_html=True)
+    st.markdown("<p style='font-size: 22px; font-weight: bold;'>🗓️ Visão Geral (Mapa Semanal)</p>", unsafe_allow_html=True)
     if st.toggle("Ativar Resumo Semanal (Mapa Geral)"): 
         resumo_semanal_navegavel()
 
