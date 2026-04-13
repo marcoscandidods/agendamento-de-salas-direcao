@@ -277,7 +277,7 @@ def calendario_compacto(df_sala, n_sala):
         .bar { height: 3.5px; border-radius: 2px; width: 100%; }
         .bar-m { background-color: #6366f1; } /* Indigo */
         .bar-t { background-color: #06b6d4; } /* Ciano */
-        .bar-n { background-color: #e11d48; } /* Rubi */
+        .bar-n { background-color: #e11d48; } /* Rose */
         .weekend { background-color: rgba(128, 128, 128, 0.1); }
     </style>
     <table class='cal-table'><tr>
