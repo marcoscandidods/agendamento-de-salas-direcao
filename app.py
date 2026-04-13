@@ -143,7 +143,8 @@ def login_dialog():
                                  (n_nome, n_email, hash_senha(n_senha), vinc), commit=True)
                 st.success("✅ Cadastro realizado! Agora você pode entrar.")
 
-col_t, col_l = st.columns([7, 3])
+# AJUSTE 1: Coluna de login mais apertada à direita (Proporção 4:1)
+col_t, col_l = st.columns([4, 1])
 with col_t:
     st.title("📅 Gestão de Espaços - FES")
 with col_l:
@@ -156,7 +157,8 @@ with col_l:
             st.session_state.user_dept = None
             st.rerun()
     else:
-        if st.button("🔑 Entrar / Cadastrar"):
+        # Botão posicionado dentro da coluna lateral que agora é mais estreita à direita
+        if st.button("🔑 Entrar / Cadastrar", use_container_width=True):
             login_dialog()
 
 # ==========================================
@@ -224,8 +226,8 @@ def consultar_vagos():
 
 def calendario_compacto(df_sala, n_sala):
     """Desenho do calendário adaptativo para modo claro e escuro."""
-    # Ajuste das colunas para alinhamento das setas nas pontas
-    c_seta_esq, c_espaco, c_titulo, c_espaco2, c_seta_dir = st.columns([0.5, 3, 3, 3, 0.5])
+    # AJUSTE 2: Alinhamento das setas nas pontas extremas (Proporção 1:12:1)
+    c_seta_esq, c_titulo, c_seta_dir = st.columns([1, 12, 1])
     
     with c_seta_esq:
         if st.button("◀", key=f"p_{n_sala}"):
@@ -234,6 +236,7 @@ def calendario_compacto(df_sala, n_sala):
             st.rerun()
     
     with c_seta_dir:
+        # Botão da direita agora alinhado ao final da grade
         if st.button("▶", key=f"n_{n_sala}"):
             st.session_state.mes_ref += 1
             if st.session_state.mes_ref == 13: st.session_state.mes_ref = 1; st.session_state.ano_ref += 1
