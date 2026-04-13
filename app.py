@@ -107,8 +107,8 @@ lista_h = [(datetime.strptime("07:00", "%H:%M") + timedelta(minutes=30*i)).strft
 def login_dialog():
     aba_log, aba_cad = st.tabs(["Entrar", "Criar Conta"])
     with aba_log:
-        email_log = st.text_input("E-mail")
-        senha_log = st.text_input("Password", type="password")
+        email_log = st.text_input("E-mail", key="email_login")
+        senha_log = st.text_input("Password", type="password", key="senha_login")
         if st.button("Fazer Login"):
             if "LOGIN_USER" in st.secrets and email_log == st.secrets["LOGIN_USER"] and senha_log == st.secrets["LOGIN_PWD"]:
                 st.session_state.user = "Administrador"
@@ -127,21 +127,21 @@ def login_dialog():
                     st.error("E-mail ou password incorretos.")
 
     with aba_cad:
-        st.info("⚠️ **Atenção:** Apenas e-mails institucionais (**@ufam.edu.br**) são permitidos para registro.")
-        n_nome = st.text_input("Nome Completo")
-        n_email = st.text_input("E-mail Institucional (exemplo@ufam.edu.br)")
-        n_senha = st.text_input("Password", type="password")
-        vinc = st.selectbox("Departamento / Origem", DEPARTAMENTOS)
+        st.info("⚠️ **Atenção:** Apenas e-mails institucionais (**@ufam.edu.br**) são permitidos para registo.")
+        n_nome = st.text_input("Nome Completo", key="nome_registo")
+        n_email = st.text_input("E-mail Institucional (exemplo@ufam.edu.br)", key="email_registo")
+        n_senha = st.text_input("Password", type="password", key="senha_registo")
+        vinc = st.selectbox("Departamento / Origem", DEPARTAMENTOS, key="vinculo_registo")
         if st.button("Finalizar Registo"):
             if not n_email.lower().strip().endswith("@ufam.edu.br"):
                 st.error("❌ Erro: Deve utilizar um e-mail institucional @ufam.edu.br")
             elif not n_nome or not n_senha:
                 st.error("❌ Erro: Preencha todos os campos.")
             else:
-                with st.spinner("A guardar dados..."):
+                with st.spinner("Aguardando dados..."):
                     execute_query("INSERT INTO usuarios (nome, email, senha, vinculo) VALUES (%s,%s,%s,%s)", 
                                  (n_nome, n_email, hash_senha(n_senha), vinc), commit=True)
-                st.success("✅ Registro realizado! Agora pode entrar.")
+                st.success("✅ Registro realizado com sucesso! Faça login para acessar.")
 
 # Ajuste da coluna de login
 col_t, col_l = st.columns([4, 1])
@@ -277,7 +277,7 @@ def calendario_compacto(df_sala, n_sala):
         .bar { height: 3.5px; border-radius: 2px; width: 100%; }
         .bar-m { background-color: #6366f1; } /* Indigo */
         .bar-t { background-color: #06b6d4; } /* Ciano */
-        .bar-n { background-color: #e11d48; } /* Rose */
+        .bar-n { background-color: #e11d48; } /* Rubi */
         .weekend { background-color: rgba(128, 128, 128, 0.1); }
     </style>
     <table class='cal-table'><tr>
