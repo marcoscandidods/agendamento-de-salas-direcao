@@ -260,7 +260,6 @@ def calendario_compacto(df_sala, n_sala):
                     if h_i < time(22, 0) and h_f > time(18, 0): dias_ocup[dia]['n'] = True
             except: continue
 
-    # NOVAS CORES DE OCUPAÇÃO: Tons de Azul (Diferentes dos status da tabela)
     html = """
     <style>
         .cal-table { width:100%; text-align:center; border-collapse: collapse; table-layout: fixed; }
@@ -303,7 +302,7 @@ def calendario_compacto(df_sala, n_sala):
     st.markdown(html + "</table>", unsafe_allow_html=True)
 
 def exibir_tabela(n_sala):
-    """Exibe a tabela filtrada por mês e oculta 'Responsável' para utilizadores não logados."""
+    """Exibe a tabela filtrada por mês e gerência de agendamentos."""
     res = execute_query("SELECT id, status, data, horario_inicio, horario_fim, evento, origem, servidor_resp, email_solicitante FROM reservas WHERE sala=%s ORDER BY data DESC", (n_sala,), fetch=True)
     df_raw = pd.DataFrame(res, columns=['ID', 'Status', 'Data', 'Início', 'Fim', 'Descrição', 'Origem', 'Responsável', 'Dono']) if res else pd.DataFrame()
     
@@ -319,7 +318,6 @@ def exibir_tabela(n_sala):
     df_cal = df.rename(columns={'Status':'status', 'Data':'data'}) if not df.empty else df
     calendario_compacto(df_cal, n_sala)
     
-    # AJUSTE: LEGENDA DE OCUPAÇÃO (Em tons de azul conforme solicitado)
     st.markdown("""
     <div style='display: flex; flex-direction: column; align-items: center; margin-top: -5px; margin-bottom: 10px;'>
         <p style='font-size: 12px; font-weight: bold; color: #6b7280; margin-bottom: 5px;'>Legenda: Ocupação por Turno</p>
@@ -349,15 +347,38 @@ def exibir_tabela(n_sala):
         st.dataframe(df_display.style.map(lambda x: f'background-color: {"#16a34a" if x=="Confirmado" else ("#ca8a04" if x in ["Pré-agendado", "Em Análise"] else "#dc2626")}; color: white; font-weight: bold', subset=['Status']), use_container_width=True, hide_index=True)
         
         if st.session_state.is_admin:
-            with st.expander("📝 Editar Agendamento (Admin)"):
-                id_ed = st.selectbox("Selecione o ID para editar:", df['ID'], key=f"sel_{n_sala}")
-                row = df[df['ID'] == id_ed].iloc[0]
-                c1, c2 = st.columns(2)
-                novo_st = c1.selectbox("Novo Status", ["Confirmado", "Em Análise", "Cancelado"], index=["Confirmado", "Em Análise", "Cancelado"].index(row['Status']), key=f"st_{id_ed}")
-                nova_desc = c2.text_input("Nova Descrição", value=row['Descrição'], key=f"desc_{id_ed}")
-                if st.button("Confirmar Alteração", key=f"btn_{id_ed}"):
-                    execute_query("UPDATE reservas SET status=%s, evento=%s WHERE id=%s", (novo_st, nova_desc, id_ed), commit=True)
-                    st.success("Atualizado!"); st.rerun()
+            with st.expander("📝 Gerenciar Agendamento (Admin)"):
+                # Ajuste: Permite digitar o ID além de selecionar
+                lista_ids = df['ID'].tolist()
+                id_ed = st.number_input("Digite ou selecione o ID para editar:", min_value=0, value=lista_ids[0] if lista_ids else 0, key=f"sel_{n_sala}")
+                
+                # Verifica se o ID digitado existe no banco
+                res_check = execute_query("SELECT id, status, evento FROM reservas WHERE id=%s", (id_ed,), fetch=True)
+                
+                if res_check:
+                    row_data = res_check[0]
+                    c1, c2 = st.columns(2)
+                    novo_st = c1.selectbox("Novo Status", ["Confirmado", "Em Análise", "Cancelado"], 
+                                          index=["Confirmado", "Em Análise", "Cancelado"].index(row_data[1]) if row_data[1] in ["Confirmado", "Em Análise", "Cancelado"] else 1, 
+                                          key=f"st_{id_ed}")
+                    nova_desc = c2.text_input("Nova Descrição", value=row_data[2], key=f"desc_{id_ed}")
+                    
+                    b1, b2 = st.columns(2)
+                    with b1:
+                        if st.button("Confirmar Alteração", key=f"btn_upd_{id_ed}", use_container_width=True):
+                            execute_query("UPDATE reservas SET status=%s, evento=%s WHERE id=%s", (novo_st, nova_desc, id_ed), commit=True)
+                            st.success("Atualizado!"); st.rerun()
+                    
+                    with b2:
+                        # Opção de Excluir com confirmação
+                        st.markdown("---")
+                        confirmar_del = st.checkbox("⚠️ Confirmar exclusão definitiva", key=f"conf_del_{id_ed}")
+                        if confirmar_del:
+                            if st.button("❌ Excluir Solicitação", key=f"btn_del_adm_{id_ed}", type="primary", use_container_width=True):
+                                execute_query("DELETE FROM reservas WHERE id=%s", (id_ed,), commit=True)
+                                st.success("Agendamento removido permanentemente!"); st.rerun()
+                else:
+                    st.warning("ID não encontrado na base de dados.")
 
         elif st.session_state.user:
             minhas_reservas = df[df['Dono'] == st.session_state.user]
@@ -365,9 +386,11 @@ def exibir_tabela(n_sala):
                 with st.expander("🗑️ Minhas Solicitações (Apagar)"):
                     st.caption("Pode apagar apenas os agendamentos realizados por si.")
                     id_del = st.selectbox("Selecione a sua solicitação para apagar:", minhas_reservas['ID'], key=f"del_user_{n_sala}")
-                    if st.button("Apagar Solicitação", key=f"btn_del_{id_del}", type="primary"):
-                        execute_query("DELETE FROM reservas WHERE id=%s", (id_del,), commit=True)
-                        st.success("Solicitação apagada!"); st.rerun()
+                    confirmar_user = st.checkbox("Tem certeza que deseja apagar?", key=f"check_user_{id_del}")
+                    if confirmar_user:
+                        if st.button("Apagar Solicitação", key=f"btn_del_u_{id_del}", type="primary"):
+                            execute_query("DELETE FROM reservas WHERE id=%s", (id_del,), commit=True)
+                            st.success("Solicitação apagada!"); st.rerun()
     else:
         st.info("Nenhum agendamento encontrado para este mês.")
 
