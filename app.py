@@ -260,7 +260,7 @@ def calendario_compacto(df_sala, n_sala):
                     if h_i < time(22, 0) and h_f > time(18, 0): dias_ocup[dia]['n'] = True
             except: continue
 
-    # NOVAS CORES DE OCUPAÇÃO: Indigo, Ciano e Rubi (Diferentes do status)
+    # NOVAS CORES DE OCUPAÇÃO: Tons de Azul (Diferentes dos status da tabela)
     html = """
     <style>
         .cal-table { width:100%; text-align:center; border-collapse: collapse; table-layout: fixed; }
@@ -275,9 +275,9 @@ def calendario_compacto(df_sala, n_sala):
             display: flex; flex-direction: column; gap: 2px; padding: 0 4px;
         }
         .bar { height: 3.5px; border-radius: 2px; width: 100%; }
-        .bar-m { background-color: #6366f1; } /* Indigo */
-        .bar-t { background-color: #06b6d4; } /* Ciano */
-        .bar-n { background-color: #e11d48; } /* Rubi */
+        .bar-m { background-color: #93c5fd; } /* Azul Claro */
+        .bar-t { background-color: #3b82f6; } /* Azul Médio */
+        .bar-n { background-color: #1e3a8a; } /* Azul Marinho */
         .weekend { background-color: rgba(128, 128, 128, 0.1); }
     </style>
     <table class='cal-table'><tr>
@@ -319,19 +319,19 @@ def exibir_tabela(n_sala):
     df_cal = df.rename(columns={'Status':'status', 'Data':'data'}) if not df.empty else df
     calendario_compacto(df_cal, n_sala)
     
-    # AJUSTE: LEGENDA DE OCUPAÇÃO (Com cores diferentes do status)
+    # AJUSTE: LEGENDA DE OCUPAÇÃO (Em tons de azul conforme solicitado)
     st.markdown("""
     <div style='display: flex; flex-direction: column; align-items: center; margin-top: -5px; margin-bottom: 10px;'>
         <p style='font-size: 12px; font-weight: bold; color: #6b7280; margin-bottom: 5px;'>Legenda: Ocupação por Turno</p>
         <div style='display: flex; justify-content: center; gap: 25px;'>
             <div style='display: flex; align-items: center; gap: 8px; font-size: 13px; color: #6b7280;'>
-                <div style='width: 12px; height: 4px; background: #6366f1; border-radius: 2px;'></div> Manhã
+                <div style='width: 12px; height: 4px; background: #93c5fd; border-radius: 2px;'></div> Manhã
             </div>
             <div style='display: flex; align-items: center; gap: 8px; font-size: 13px; color: #6b7280;'>
-                <div style='width: 12px; height: 4px; background: #06b6d4; border-radius: 2px;'></div> Tarde
+                <div style='width: 12px; height: 4px; background: #3b82f6; border-radius: 2px;'></div> Tarde
             </div>
             <div style='display: flex; align-items: center; gap: 8px; font-size: 13px; color: #6b7280;'>
-                <div style='width: 12px; height: 4px; background: #e11d48; border-radius: 2px;'></div> Noite
+                <div style='width: 12px; height: 4px; background: #1e3a8a; border-radius: 2px;'></div> Noite
             </div>
         </div>
     </div>
