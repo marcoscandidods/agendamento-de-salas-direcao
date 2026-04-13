@@ -167,7 +167,7 @@ def consultar_vagos():
                 else: st.error("Nenhuma sala disponível.")
 
 def calendario_compacto(df_sala, n_sala):
-    """Desenho do calendário com cores."""
+    """Desenho do calendário com indicadores de barras coloridas (Estilo Android)."""
     col1, col2, col3 = st.columns([1, 8, 1])
     if col1.button("◀", key=f"p_{n_sala}"):
         st.session_state.mes_ref -= 1
@@ -184,25 +184,71 @@ def calendario_compacto(df_sala, n_sala):
     dias_ocup = {}
     if not df_sala.empty:
         for _, r in df_sala.iterrows():
+            if r['status'] == 'Cancelado': continue
             try:
+                # Usa 'data' e não 'Data' devido ao rename feito na função exibir_tabela
                 dt = datetime.strptime(r['data'], '%d/%m/%Y')
                 if dt.year == st.session_state.ano_ref and dt.month == st.session_state.mes_ref:
-                    if dias_ocup.get(dt.day) != 'Confirmado': dias_ocup[dt.day] = r['status']
+                    dia = dt.day
+                    if dia not in dias_ocup:
+                        dias_ocup[dia] = {'m': False, 't': False, 'n': False}
+                    
+                    # Horários para detectar o turno
+                    h_i = datetime.strptime(r['Início'], '%H:%M').time()
+                    h_f = datetime.strptime(r['Fim'], '%H:%M').time()
+                    
+                    # Manhã: 08:00 - 12:00 | Tarde: 12:00 - 18:00 | Noite: 18:00 - 22:00
+                    if h_i < time(12, 0) and h_f > time(8, 0): dias_ocup[dia]['m'] = True
+                    if h_i < time(18, 0) and h_f > time(12, 0): dias_ocup[dia]['t'] = True
+                    if h_i < time(22, 0) and h_f > time(18, 0): dias_ocup[dia]['n'] = True
             except: continue
 
-    html = "<style>.cal-table { width:100%; text-align:center; border-collapse: collapse; }.cal-table td { border: 1px solid #444; height: 35px; font-weight: bold; }</style><table class='cal-table'><tr>"
-    for d in ['D','S','T','Q','Q','S','S']: html += f"<th style='color:gray; font-size:12px;'>{d}</th>"
+    html = """
+    <style>
+        .cal-table { width:100%; text-align:center; border-collapse: collapse; table-layout: fixed; }
+        .cal-table th { color: gray; font-size: 11px; padding-bottom: 5px; }
+        .cal-table td { 
+            border: 1px solid #333; height: 48px; vertical-align: top; 
+            position: relative; padding-top: 5px; font-size: 14px; font-weight: bold;
+        }
+        .indicator-container {
+            position: absolute; bottom: 3px; left: 0; width: 100%;
+            display: flex; flex-direction: column; gap: 1.5px; padding: 0 4px;
+        }
+        .bar { height: 3px; border-radius: 1px; width: 100%; }
+        .bar-m { background-color: #3b82f6; } /* Azul - Manhã */
+        .bar-t { background-color: #10b981; } /* Verde - Tarde */
+        .bar-n { background-color: #f59e0b; } /* Laranja - Noite */
+        .weekend { background-color: #1e1e1e; }
+    </style>
+    <table class='cal-table'><tr>
+    """
+    for d in ['D','S','T','Q','Q','S','S']: html += f"<th>{d}</th>"
     html += "</tr>"
     for sem in calendar.monthcalendar(st.session_state.ano_ref, st.session_state.mes_ref):
         html += "<tr>"
         for i, dia in enumerate(sem):
             if dia == 0: html += "<td></td>"
             else:
-                s_st = dias_ocup.get(dia)
-                bg = "#2563EB" if s_st == 'Confirmado' else ("#D97706" if s_st in ['Pré-agendado', 'Em Análise'] else ("#1e1e1e" if i in [0,6] else "transparent"))
-                html += f"<td style='background-color:{bg}; color:white;'>{dia}</td>"
+                classe_td = "weekend" if i in [0, 6] else ""
+                content = f"<div>{dia}</div>"
+                if dia in dias_ocup:
+                    bars = "<div class='indicator-container'>"
+                    if dias_ocup[dia]['m']: bars += "<div class='bar bar-m'></div>"
+                    if dias_ocup[dia]['t']: bars += "<div class='bar bar-t'></div>"
+                    if dias_ocup[dia]['n']: bars += "<div class='bar bar-n'></div>"
+                    bars += "</div>"
+                    content += bars
+                html += f"<td class='{classe_td}'>{content}</td>"
         html += "</tr>"
     st.markdown(html + "</table>", unsafe_allow_html=True)
+    st.markdown("""
+    <div style='display: flex; gap: 15px; font-size: 11px; justify-content: center; margin-top: 10px; color: #aaa;'>
+        <div><span style='color: #3b82f6;'>●</span> Manhã</div>
+        <div><span style='color: #10b981;'>●</span> Tarde</div>
+        <div><span style='color: #f59e0b;'>●</span> Noite</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 def exibir_tabela(n_sala):
     """Exibe a tabela e a opção de edição para Admin."""
