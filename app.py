@@ -127,15 +127,21 @@ def login_dialog():
                     st.error("E-mail ou senha incorretos.")
 
     with aba_cad:
+        st.info("⚠️ **Atenção:** Somente e-mails institucionais (**@ufam.edu.br**) são permitidos para cadastro.")
         n_nome = st.text_input("Nome Completo")
-        n_email = st.text_input("E-mail Institucional")
+        n_email = st.text_input("E-mail Institucional (exemplo@ufam.edu.br)")
         n_senha = st.text_input("Senha", type="password")
         vinc = st.selectbox("Departamento / Origem", DEPARTAMENTOS)
         if st.button("Finalizar Cadastro"):
-            with st.spinner("Salvando dados..."):
-                execute_query("INSERT INTO usuarios (nome, email, senha, vinculo) VALUES (%s,%s,%s,%s)", 
-                             (n_nome, n_email, hash_senha(n_senha), vinc), commit=True)
-            st.success("✅ Cadastro realizado! Agora você pode entrar.")
+            if not n_email.lower().strip().endswith("@ufam.edu.br"):
+                st.error("❌ Erro: Você deve utilizar um e-mail institucional @ufam.edu.br")
+            elif not n_nome or not n_senha:
+                st.error("❌ Erve: Preencha todos os campos.")
+            else:
+                with st.spinner("Salvando dados..."):
+                    execute_query("INSERT INTO usuarios (nome, email, senha, vinculo) VALUES (%s,%s,%s,%s)", 
+                                 (n_nome, n_email, hash_senha(n_senha), vinc), commit=True)
+                st.success("✅ Cadastro realizado! Agora você pode entrar.")
 
 col_t, col_l = st.columns([7, 3])
 with col_t:
@@ -296,8 +302,9 @@ def calendario_compacto(df_sala, n_sala):
 
 def exibir_tabela(n_sala):
     """Exibe a tabela e oculta 'Responsável' para usuários não logados."""
-    res = execute_query("SELECT id, status, data, horario_inicio, horario_fim, evento, origem, servidor_resp FROM reservas WHERE sala=%s ORDER BY data DESC", (n_sala,), fetch=True)
-    df = pd.DataFrame(res, columns=['ID', 'Status', 'Data', 'Início', 'Fim', 'Descrição', 'Origem', 'Responsável']) if res else pd.DataFrame()
+    # Alterada a query para incluir email_solicitante para controle de exclusão
+    res = execute_query("SELECT id, status, data, horario_inicio, horario_fim, evento, origem, servidor_resp, email_solicitante FROM reservas WHERE sala=%s ORDER BY data DESC", (n_sala,), fetch=True)
+    df = pd.DataFrame(res, columns=['ID', 'Status', 'Data', 'Início', 'Fim', 'Descrição', 'Origem', 'Responsável', 'Dono']) if res else pd.DataFrame()
     
     # Gerar calendário
     df_cal = df.rename(columns={'Status':'status', 'Data':'data'}) if not df.empty else df
@@ -314,6 +321,7 @@ def exibir_tabela(n_sala):
         
         st.dataframe(df_display.style.map(lambda x: f'background-color: {"#16a34a" if x=="Confirmado" else ("#ca8a04" if x in ["Pré-agendado", "Em Análise"] else "#dc2626")}; color: white; font-weight: bold', subset=['Status']), use_container_width=True, hide_index=True)
         
+        # Área de edição para Admin
         if st.session_state.is_admin:
             with st.expander("📝 Editar Agendamento (Admin)"):
                 id_ed = st.selectbox("Selecione o ID para editar:", df['ID'], key=f"sel_{n_sala}")
@@ -324,6 +332,18 @@ def exibir_tabela(n_sala):
                 if st.button("Confirmar Alteração", key=f"btn_{id_ed}"):
                     execute_query("UPDATE reservas SET status=%s, evento=%s WHERE id=%s", (novo_st, nova_desc, id_ed), commit=True)
                     st.success("Atualizado!"); st.rerun()
+
+        # ÁREA NOVA: Exclusão para Usuário Comum (Apenas as dele)
+        elif st.session_state.user:
+            # Filtra apenas os agendamentos onde o Dono (email_solicitante) é o usuário logado
+            minhas_reservas = df[df['Dono'] == st.session_state.user]
+            if not minhas_reservas.empty:
+                with st.expander("🗑️ Minhas Solicitações (Excluir)"):
+                    st.caption("Você pode excluir apenas os agendamentos realizados por você.")
+                    id_del = st.selectbox("Selecione sua solicitação para excluir:", minhas_reservas['ID'], key=f"del_user_{n_sala}")
+                    if st.button("Excluir Solicitação", key=f"btn_del_{id_del}", type="primary"):
+                        execute_query("DELETE FROM reservas WHERE id=%s", (id_del,), commit=True)
+                        st.success("Solicitação excluída!"); st.rerun()
 
 def resumo_semanal_navegavel():
     """Visão Geral de todas as salas de aula."""
@@ -377,7 +397,8 @@ def formulario_agendamento():
                         st.error("Conflito de horário!")
                     else:
                         st_b = "Confirmado" if st.session_state.is_admin else "Em Análise"
-                        execute_query("INSERT INTO reservas (sala, data, horario_inicio, horario_fim, evento, origem, status, email_solicitante) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)", (sala_f, d_str, hi_f, hf_f, evento_f, origem_f, st_b, st.session_state.user), commit=True)
+                        # servidor_resp e email_solicitante gravados como o nome do usuário logado conforme original
+                        execute_query("INSERT INTO reservas (sala, data, horario_inicio, horario_fim, evento, origem, status, email_solicitante, servidor_resp) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)", (sala_f, d_str, hi_f, hf_f, evento_f, origem_f, st_b, st.session_state.user, st.session_state.user), commit=True)
                         st.success("Agendamento enviado!"); st.rerun()
 
 # ==========================================
