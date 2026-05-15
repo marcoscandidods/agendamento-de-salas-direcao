@@ -274,9 +274,9 @@ def calendario_compacto(df_sala, n_sala):
             display: flex; flex-direction: column; gap: 2px; padding: 0 4px;
         }
         .bar { height: 3.5px; border-radius: 2px; width: 100%; }
-        .bar-m { background-color: #93c5fd; } /* Azul Claro */
-        .bar-t { background-color: #3b82f6; } /* Azul Médio */
-        .bar-n { background-color: #1e3a8a; } /* Azul Marinho */
+        .bar-m { background-color: #fca5a5; } /* Vermelho Claro */
+        .bar-t { background-color: #ef4444; } /* Vermelho Médio */
+        .bar-n { background-color: #991b1b; } /* Vermelho Escuro */
         .weekend { background-color: rgba(128, 128, 128, 0.1); }
     </style>
     <table class='cal-table'><tr>
@@ -323,13 +323,13 @@ def exibir_tabela(n_sala):
         <p style='font-size: 12px; font-weight: bold; color: #6b7280; margin-bottom: 5px;'>Legenda: Ocupação por Turno</p>
         <div style='display: flex; justify-content: center; gap: 25px;'>
             <div style='display: flex; align-items: center; gap: 8px; font-size: 13px; color: #6b7280;'>
-                <div style='width: 12px; height: 4px; background: #93c5fd; border-radius: 2px;'></div> Manhã
+                <div style='width: 12px; height: 4px; background: #fca5a5; border-radius: 2px;'></div> Manhã
             </div>
             <div style='display: flex; align-items: center; gap: 8px; font-size: 13px; color: #6b7280;'>
-                <div style='width: 12px; height: 4px; background: #3b82f6; border-radius: 2px;'></div> Tarde
+                <div style='width: 12px; height: 4px; background: #ef4444; border-radius: 2px;'></div> Tarde
             </div>
             <div style='display: flex; align-items: center; gap: 8px; font-size: 13px; color: #6b7280;'>
-                <div style='width: 12px; height: 4px; background: #1e3a8a; border-radius: 2px;'></div> Noite
+                <div style='width: 12px; height: 4px; background: #991b1b; border-radius: 2px;'></div> Noite
             </div>
         </div>
     </div>
@@ -348,12 +348,11 @@ def exibir_tabela(n_sala):
         
         if st.session_state.is_admin:
             with st.expander("📝 Gerenciar Agendamento (Admin)"):
-                # Ajuste: Permite digitar o ID além de selecionar
                 lista_ids = df['ID'].tolist()
                 id_ed = st.number_input("Digite ou selecione o ID para editar:", min_value=0, value=lista_ids[0] if lista_ids else 0, key=f"sel_{n_sala}")
                 
-                # Verifica se o ID digitado existe no banco
-                res_check = execute_query("SELECT id, status, evento FROM reservas WHERE id=%s", (id_ed,), fetch=True)
+                # CORREÇÃO: Pegar os índices corretos da query original para popular os campos
+                res_check = execute_query("SELECT id, status, data, horario_inicio, horario_fim, evento FROM reservas WHERE id=%s", (id_ed,), fetch=True)
                 
                 if res_check:
                     row_data = res_check[0]
@@ -361,7 +360,8 @@ def exibir_tabela(n_sala):
                     novo_st = c1.selectbox("Novo Status", ["Confirmado", "Em Análise", "Cancelado"], 
                                           index=["Confirmado", "Em Análise", "Cancelado"].index(row_data[1]) if row_data[1] in ["Confirmado", "Em Análise", "Cancelado"] else 1, 
                                           key=f"st_{id_ed}")
-                    nova_desc = c2.text_input("Nova Descrição", value=row_data[2], key=f"desc_{id_ed}")
+                    # CORREÇÃO: Índice 5 agora aponta corretamente para 'evento' no SELECT acima
+                    nova_desc = c2.text_input("Nova Descrição", value=row_data[5], key=f"desc_{id_ed}")
                     
                     b1, b2 = st.columns(2)
                     with b1:
@@ -370,7 +370,6 @@ def exibir_tabela(n_sala):
                             st.success("Atualizado!"); st.rerun()
                     
                     with b2:
-                        # Opção de Excluir com confirmação
                         st.markdown("---")
                         confirmar_del = st.checkbox("⚠️ Confirmar exclusão definitiva", key=f"conf_del_{id_ed}")
                         if confirmar_del:
@@ -412,7 +411,8 @@ def resumo_semanal_navegavel():
                 if not df.empty:
                     evs = df[(df['sala'] == s) & (df['data'] == ds)]
                     for _, r in evs.iterrows():
-                        cor = "#1e40af" if r['status'] == "Confirmado" else "#D97706"
+                        # Ajustado para tons de vermelho também no mapa semanal
+                        cor = "#991b1b" if r['status'] == "Confirmado" else "#dc2626"
                         st.markdown(f"<div style='font-size:8px; padding:2px; border-radius:3px; background:{cor}; color:white;'>{r['hi']}-{r['hf']}</div>", unsafe_allow_html=True)
 
 def formulario_agendamento():
