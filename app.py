@@ -146,7 +146,7 @@ def login_dialog():
 # Ajuste da coluna de login
 col_t, col_l = st.columns([4, 1])
 with col_t:
-    st.title("📅 Gestão de Espaços - FES")
+    st.title("📅 Agendamento de Salas - FES")
 with col_l:
     if st.session_state.user:
         st.write(f"Olá, **{st.session_state.user}**")
